@@ -23,6 +23,7 @@ namespace IPOClient.Repositories.Implementations
                 IPOName = request.IPOName!,
                 IPOType = request.IPOType,
                 IPO_Upper_Price_Band = request.IPO_Upper_Price_Band,
+                OpenIPOPrice = request.IPO_Upper_Price_Band, // Set to same as IPO_Upper_Price_Band
                 Total_IPO_Size_Cr = request.Total_IPO_Size_Cr,
                 IPO_Retail_Lot_Size = request.IPO_Retail_Lot_Size,
                 IPO_SHNI_Lot_Size = request.IPO_SHNI_Lot_Size,
@@ -52,6 +53,7 @@ namespace IPOClient.Repositories.Implementations
             ipo.IPOName = request.IPOName!;
             ipo.IPOType = request.IPOType;
             ipo.IPO_Upper_Price_Band = request.IPO_Upper_Price_Band;
+            ipo.OpenIPOPrice = request.IPO_Upper_Price_Band; // Set to same as IPO_Upper_Price_Band
             ipo.Total_IPO_Size_Cr = request.Total_IPO_Size_Cr;
             ipo.IPO_Retail_Lot_Size = request.IPO_Retail_Lot_Size;
             ipo.IPO_SHNI_Lot_Size = request.IPO_SHNI_Lot_Size;
