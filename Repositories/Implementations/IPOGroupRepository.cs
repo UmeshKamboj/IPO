@@ -71,7 +71,7 @@ namespace IPOClient.Repositories.Implementations
         {
             var list = await _dbSet
                 .AsNoTracking()
-                .Where(x => x.IsActive && x.CompanyId == companyId && (ipoId.HasValue && x.IPOId== ipoId.Value))
+                .Where(x => x.IsActive && x.CompanyId == companyId && (!ipoId.HasValue || x.IPOId == ipoId.Value))
                 .OrderByDescending(x => x.CreatedDate)
                 .ToListAsync();
 

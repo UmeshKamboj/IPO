@@ -89,9 +89,12 @@ namespace IPOClient.Data
                 entity.HasOne(o => o.BuyerMaster)
                       .WithMany(m => m.Orders)
                       .HasForeignKey(o => o.BuyerMasterId);
+
+                // Specify precision and scale for Rate property
+                entity.Property(e => e.Rate)
+                      .HasPrecision(18, 4); // 18 total digits, 4 decimal places
             });
         }
     }
 
 }
-

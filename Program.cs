@@ -206,29 +206,37 @@ try
         try
         {
             // Ensure database is created and apply any pending migrations
-            logger.LogInformation("Checking database existence and applying migrations...");
+            logger.LogInformation("Checking database connection and pending migrations...");
 
-            // Create database if it doesn't exist
-            bool dbCreated = await db.Database.EnsureCreatedAsync();
+            // Check if database can be connected
+            bool canConnect = await db.Database.CanConnectAsync();
 
-            if (dbCreated)
+            if (!canConnect)
             {
-                logger.LogInformation("Database created successfully from entities.");
+                logger.LogWarning("Cannot connect to database. Creating database...");
+            }
+
+            // Get all pending migrations
+            var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+            var appliedMigrations = await db.Database.GetAppliedMigrationsAsync();
+
+            logger.LogInformation($"Applied migrations: {appliedMigrations.Count()}");
+            logger.LogInformation($"Pending migrations: {pendingMigrations.Count()}");
+
+            if (pendingMigrations.Any())
+            {
+                logger.LogInformation($"Applying {pendingMigrations.Count()} pending migration(s):");
+                foreach (var migration in pendingMigrations)
+                {
+                    logger.LogInformation($"  - {migration}");
+                }
+
+                await db.Database.MigrateAsync();
+                logger.LogInformation("All migrations applied successfully.");
             }
             else
             {
-                // Database exists, check for pending migrations
-                var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
-                if (pendingMigrations.Any())
-                {
-                    logger.LogInformation($"Applying {pendingMigrations.Count()} pending migrations...");
-                    await db.Database.MigrateAsync();
-                    logger.LogInformation("Migrations applied successfully.");
-                }
-                else
-                {
-                    logger.LogInformation("Database is up to date. No migrations needed.");
-                }
+                logger.LogInformation("Database is up to date. No pending migrations.");
             }
 
             // Seed initial data
