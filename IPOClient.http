@@ -1,0 +1,143 @@
+@IPOClient_HostAddress = https://localhost:7289
+@adminToken = 
+@userToken = 
+
+### 1. Login as Admin - COPY TOKEN FROM RESPONSE TO @adminToken ABOVE
+# Steps:
+# 1. Run this request
+# 2. Copy the value from: response -> data -> token
+# 3. Paste it into @adminToken variable at the top of this file
+# Response format:
+# {
+#   "data": {
+#     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+#     "user": { "id": 1, "fname": "Admin", "email": "admin@ivotiontech.com", ... }
+#   },
+#   "responseType": 1,
+#   "responseMessage": "Login successful",
+#   "responseCode": "200",
+#   "returnId": 1
+# }
+POST {{IPOClient_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@ivotiontech.com",
+  "password": "Admin@123"
+}
+
+###
+
+### 2. Login as Regular User - COPY TOKEN FROM RESPONSE TO @userToken ABOVE
+POST {{IPOClient_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@ivotiontech.com",
+  "password": "User@123"
+}
+
+###
+
+### 3. Get All Users with Paging (page 1, 10 items)
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=10
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 4. Get Users with Filter - Email
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=10&email=admin
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 5. Get Users with Filter - FirstName
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=10&firstName=John
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 6. Get Users with Filter - LastName
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=10&lastName=Doe
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 7. Get Users with Filter - Phone
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=10&phone=+1234567890
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 8. Get Users with Filter - ExpiryDate Range
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=10&expiryDateFrom=2026-01-01&expiryDateTo=2027-12-31
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 9. Get Users with Multiple Filters Combined
+GET {{IPOClient_HostAddress}}/api/users?pageNumber=1&pageSize=5&email=admin&firstName=Admin&expiryDateFrom=2026-01-01
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 10. Get User by ID
+GET {{IPOClient_HostAddress}}/api/users/1
+Accept: application/json
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 11. Create New User
+POST {{IPOClient_HostAddress}}/api/users
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "fname": "John",
+  "lname": "Doe",
+  "email": "john@ivotiontech.com",
+  "password": "SecurePass@123",
+  "phone": "+1234567890",
+  "isAdmin": false,
+  "expiryDate": "2027-01-13"
+}
+
+###
+
+### 12. Update User
+PUT {{IPOClient_HostAddress}}/api/users/2
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "fname": "Jane",
+  "lname": "Smith",
+  "phone": "+9876543210",
+  "isAdmin": false,
+  "expiryDate": "2027-12-31"
+}
+
+###
+
+### 13. Delete User
+DELETE {{IPOClient_HostAddress}}/api/users/2
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 14. Logout
+POST {{IPOClient_HostAddress}}/api/auth/logout
+Accept: application/json
+
+###
+
+
+
