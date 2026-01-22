@@ -26,6 +26,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public int? BuyerMasterId { get; set; }
         public int? POChildId { get; set; } //sub order child id
         public string? GroupName { get; set; }
+        public int? GroupId { get; set; }
         public string? OrderTypeName { get; set; }
         public string? OrderCategoryName { get; set; }
         public string? InvestorTypeName { get; set; }
