@@ -72,50 +72,42 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<List<BuyerOrderResponse>>.ErrorResponse($"Error retrieving buyer place order: {ex.Message}", 500);
             }
         }
-        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId,int ipoId)
+        public async Task<ReturnData<List<BuyerOrderResponse>>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId,int ipoId)
         {
             try
             {
-                var paged = await _buyerPlaceOrderRepository.GetOrderPagedListAsync(request, companyId, ipoId);
-                var responses = paged.Items!
+                var orders = await _buyerPlaceOrderRepository.GetOrderListAsync(request, companyId, ipoId);
+                var responses = orders
                .Select((order, index) => MapToOrderResponse(
                  order,
-                 srNo: request.Skip + index + 1
+                 srNo: index + 1
                    ))
                  .ToList();
-                var result = new PagedResult<BuyerOrderResponse>(responses, paged.TotalCount, paged.Skip, paged.PageSize)
-                {
-                    //IMPORTANT: extra cloumns if any
-                    Extras = paged.Extras
-                };
-                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Orders Detail retrieved successfully", 200);
+
+                return ReturnData<List<BuyerOrderResponse>>.SuccessResponse(responses, "Orders retrieved successfully", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order detail: {ex.Message}", 500);
+                return ReturnData<List<BuyerOrderResponse>>.ErrorResponse($"Error retrieving orders: {ex.Message}", 500);
             }
         }
-        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
+        public async Task<ReturnData<List<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
         {
             try
             {
-                var paged = await _buyerPlaceOrderRepository.GetOrderDetailPagedListAsync(request, companyId, ipoId, orderType);
-                var responses = paged.Items!
+                var orders = await _buyerPlaceOrderRepository.GetOrderDetailListAsync(request, companyId, ipoId, orderType);
+                var responses = orders
                .Select((order, index) => MapToOrderDetailResponse(
                  order,
-                 srNo: request.Skip + index + 1
+                 srNo: index + 1
                    ))
                  .ToList();
-                var result = new PagedResult<BuyerOrderResponse>(responses, paged.TotalCount, paged.Skip, paged.PageSize)
-                {
-                    //IMPORTANT: extra cloumns if any
-                    Extras = paged.Extras
-                };
-                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Orders Detail retrieved successfully", 200);
+
+                return ReturnData<List<BuyerOrderResponse>>.SuccessResponse(responses, "Order details retrieved successfully", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order detail: {ex.Message}", 500);
+                return ReturnData<List<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
             }
         }
 

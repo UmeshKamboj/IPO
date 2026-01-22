@@ -86,7 +86,7 @@ namespace IPOClient.Repositories.Implementations
                .Take(5)
                .ToListAsync();
         }
-        public async Task<PagedResult<IPO_BuyerOrder>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId,int ipoId)
+        public async Task<PagedResult<IPO_BuyerOrder>> GetOrderPagedListAsync(OrderDetailPagedRequest request, int companyId,int ipoId)
         {
             // Base query
             var query = _context.BuyerOrders
@@ -128,10 +128,10 @@ namespace IPOClient.Repositories.Implementations
             //}
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId.Value);
-            if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
-                query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
-            if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
-                query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
+            //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+            //    query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
+            //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+            //    query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
             query = query.OrderByDescending(o => o.BuyerMaster.CreatedDate);
 
             // Total count before pagination
@@ -157,7 +157,52 @@ namespace IPOClient.Repositories.Implementations
             return pagedResult;
 
         }
-        public async Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
+
+        public async Task<List<IPO_BuyerOrder>> GetOrderListAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        {
+            // Base query
+            var query = _context.BuyerOrders
+                .Include(o => o.BuyerMaster)
+                   .ThenInclude(m => m.Group)
+                   .Include(o => o.OrderChild)
+                .AsQueryable();
+
+            // Only active and belong to company
+            query = query.Where(o =>
+                o.BuyerMaster.IsActive &&
+                o.BuyerMaster.CompanyId == companyId &&
+                o.BuyerMaster.IPOId == ipoId);
+
+            // Apply global search if provided
+            //if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            //{
+            //    query = query.Where(o =>
+            //     o.OrderChild.Any(c =>
+            //     (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
+            //     (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
+            //     (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
+            //     (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
+            //     )
+            // );
+            //}
+
+            // Apply group filter
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
+                query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId.Value);
+
+            // Apply category and investor type filters if provided
+            //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+            //    query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
+            //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+            //    query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
+
+            query = query.OrderByDescending(o => o.BuyerMaster.CreatedDate);
+
+            // Return all results without pagination
+            return await query.ToListAsync();
+        }
+
+        public async Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListAsync(OrderDetailPagedRequest request, int companyId, int ipoId, int orderType)
         {
             var query = _context.ChildPlaceOrder
          .Include(c => c.IPOOrder)
@@ -214,6 +259,48 @@ namespace IPOClient.Repositories.Implementations
             };
 
             return result;
+        }
+
+        public async Task<List<IPO_PlaceOrderChild>> GetOrderDetailListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
+        {
+            var query = _context.ChildPlaceOrder
+         .Include(c => c.IPOOrder)
+             .ThenInclude(o => o.BuyerMaster)
+                 .ThenInclude(m => m.Group)
+         .AsQueryable();
+
+            query = query.Where(c =>
+                c.IPOOrder.BuyerMaster.IsActive &&
+                c.IPOOrder.BuyerMaster.CompanyId == companyId && c.IPOOrder.OrderType == orderType &&
+                c.IPOOrder.BuyerMaster.IPOId == ipoId && new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) && new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
+            );
+
+            // Apply search filter
+            //if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            //{
+            //    query = query.Where(c =>
+            //        (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
+            //        (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
+            //        (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
+            //        (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
+            //    );
+            //}
+
+            // Apply group filter
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
+                query = query.Where(c => c.IPOOrder.BuyerMaster.GroupId == request.GroupId.Value);
+
+            //// Apply category and investor type filters if provided
+            //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+            //    query = query.Where(c => c.IPOOrder.OrderCategory == request.OrderCategoryId.Value);
+
+            //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+            //    query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
+
+            query = query.OrderByDescending(c => c.IPOOrder.BuyerMaster.CreatedDate);
+
+            // Return all results without pagination
+            return await query.ToListAsync();
         }
 
         public async Task<bool> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId)
