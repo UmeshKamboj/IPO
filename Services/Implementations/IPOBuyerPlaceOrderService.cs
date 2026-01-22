@@ -33,7 +33,19 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<BuyerPlaceOrderResponse>.ErrorResponse($"Error buy place order: {ex.Message}", 500);
             }
         }
+        public async Task<ReturnData<BuyerPlaceOrderResponse>> GetPlaceOrderByIdAsync(int masterId, int companyId)
+        {
+            try
+            {
+                var placeorderdata = await _buyerPlaceOrderRepository.GetByIdAsync(masterId, companyId);
 
+                return ReturnData<BuyerPlaceOrderResponse>.SuccessResponse(MapToIPOResponse(placeorderdata!), "Place order data retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<BuyerPlaceOrderResponse>.ErrorResponse($"Error place order: {ex.Message}", 500);
+            }
+        }
         public async Task<ReturnData<List<BuyerOrderResponse>>> GetTopFivePlaceOrderListAsync(int ipoId, int companyId)
         {
             try
@@ -70,6 +82,40 @@ namespace IPOClient.Services.Implementations
             catch (Exception ex)
             {
                 return ReturnData<List<BuyerOrderResponse>>.ErrorResponse($"Error retrieving buyer place order: {ex.Message}", 500);
+            }
+        }
+        public async Task<ReturnData<BuyerOrderResponse>> GetPlaceOrderDataByIdAsync(int orderId, int companyId)
+        {
+            try
+            {
+                var order = await _buyerPlaceOrderRepository.GetPlaceOrderDataByIdAsync(orderId, companyId);
+                if (order == null)
+                    return ReturnData<BuyerOrderResponse>
+                        .ErrorResponse("Order not found", 404);
+                var response = new BuyerOrderResponse
+                {
+                    SrNo = 1, // single record
+                    OrderId = order.OrderId,
+                    BuyerMasterId = order.BuyerMaster.BuyerMasterId,
+                    GroupName = order.BuyerMaster.Group?.GroupName ?? "-",
+                    OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
+                    OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
+                    InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
+                    PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
+                    Quantity = order.Quantity,
+                    Rate = order.Rate,
+                    DateTime = order.DateTime,
+                    OrderCategory=order.OrderCategory,
+                    OrderType=order.OrderType,
+                    InvestorType=order.InvestorType,
+                    GroupId=order.BuyerMaster.GroupId
+                };
+
+                return ReturnData<BuyerOrderResponse>.SuccessResponse(response, "Order retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<BuyerOrderResponse>.ErrorResponse($"Error retrieving place order data: {ex.Message}", 500);
             }
         }
         public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId,int ipoId)
@@ -134,6 +180,19 @@ namespace IPOClient.Services.Implementations
                 return ReturnData.ErrorResponse($"Error updating orderdetail: {ex.Message}",500);
             }
         }
+        public async Task<ReturnData<OrderStatusSummaryResponse>> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId)
+        {
+            try
+            {
+                var data = await _buyerPlaceOrderRepository.GetOrderStatusSummaryAsync(request, companyId);
+                return ReturnData<OrderStatusSummaryResponse>.SuccessResponse(data, "Order status retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<OrderStatusSummaryResponse>.ErrorResponse($"Error order status: {ex.Message}", 500);
+            }
+
+        }
 
         // MAP ENTITY TO RESPONSE DTO
         private BuyerPlaceOrderResponse MapToIPOResponse(IPO_BuyerPlaceOrderMaster buyer)
@@ -157,6 +216,7 @@ namespace IPOClient.Services.Implementations
             };
 
         }
+
         private BuyerOrderResponse MapToOrderDetailResponse(IPO_PlaceOrderChild child, int srNo)
         {
             var order = child.IPOOrder;
@@ -208,5 +268,6 @@ namespace IPOClient.Services.Implementations
 
         }
 
+       
     }
 }
