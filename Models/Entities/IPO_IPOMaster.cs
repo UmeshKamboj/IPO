@@ -12,6 +12,8 @@ namespace IPOClient.Models.Entities
         [Column(TypeName = "decimal(18, 4)")]
         public decimal IPO_Upper_Price_Band { get; set; }
         [Column(TypeName = "decimal(18, 4)")]
+        public decimal? OpenIPOPrice { get; set; }
+        [Column(TypeName = "decimal(18, 4)")]
         public decimal Total_IPO_Size_Cr { get; set; }
         [Column(TypeName = "decimal(18, 4)")]
         public decimal IPO_Retail_Lot_Size { get; set; }

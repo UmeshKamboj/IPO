@@ -140,6 +140,7 @@ namespace IPOClient.Services.Implementations
                 IPOName = ipo.IPOName,
                 IPOType = ipo.IPOType,
                 IPO_Upper_Price_Band = ipo.IPO_Upper_Price_Band,
+                OpenIPOPrice = ipo.OpenIPOPrice,
                 Total_IPO_Size_Cr = ipo.Total_IPO_Size_Cr,
                 IPO_Retail_Lot_Size = ipo.IPO_Retail_Lot_Size,
                 IPO_SHNI_Lot_Size = ipo.IPO_SHNI_Lot_Size,

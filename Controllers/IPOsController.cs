@@ -286,11 +286,11 @@ namespace IPOClient.Controllers
         }
 
         /// <summary>
-        /// Get all Order with global search and pagination (Alias for orderdetail/list)
+        /// Get all Order  (Alias for orderdetail/list)
         /// </summary>
         /// <remarks>
-        /// Returns paginated list of orders with optional global search across PANNumber, ClientName, DematNumber, ApplicationNo.
-        /// Default: skip=0, pageSize=10
+        /// Returns paginated list of orders.
+    
         /// Required: moduleName (buy/sell/all)
         /// </remarks>
         /// <returns>Paginated order list</returns>
@@ -302,8 +302,8 @@ namespace IPOClient.Controllers
 
             var statusCode = result.ResponseCode == 200 ? 200 : 400;
             return StatusCode(statusCode, result);
-        }
-
+        } 
+        
         /// <summary>
         /// Update Bulk Order Details 
         /// </summary>

@@ -3,8 +3,7 @@
 namespace IPOClient.Models.Requests.IPOMaster.Request
 {
     public class IPOBuyerPlaceOrderRequest
-    {
-        public int? BuyerMasterId { get; set; }
+    { 
         public int IPOId { get; set; }
 
         [Required(ErrorMessage = "Group is required")]
@@ -12,7 +11,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Request
 
         [Required(ErrorMessage = "Date and time is required")]
         public DateTime DateTime { get; set; }
-        public List<BuyerOrderRequest> Orders { get; set; }
+        public List<BuyerOrderRequest>? Orders { get; set; }
 
 
     }
@@ -32,8 +31,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Request
     }
 
     public class UpdateOrderDetailRequest
-    {
-        public int OrderId { get; set; } 
+    { 
         public int POChildId { get; set; } //Place Order Sub Child Id
         public string? PANNumber { get; set; } = string.Empty;
         public string? ClientName { get; set; } = string.Empty;

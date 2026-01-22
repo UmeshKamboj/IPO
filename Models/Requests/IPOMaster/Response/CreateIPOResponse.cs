@@ -17,7 +17,9 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         [Column(TypeName = "decimal(18, 4)")]
         public decimal? IPO_SHNI_Lot_Size { get; set; }
         [Column(TypeName = "decimal(18, 4)")]
-        public decimal? IPO_BHNI_Lot_Size { get; set; } 
+        public decimal? IPO_BHNI_Lot_Size { get; set; }
+        [Column(TypeName = "decimal(18, 4)")]
+        public decimal? OpenIPOPrice { get; set; } 
         public int Retail_Percentage { get; set; }
         public int? BHNI_Percentage { get; set; }  
         public int? SHNI_Percentage { get; set; }
