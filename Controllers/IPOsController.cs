@@ -191,20 +191,20 @@ namespace IPOClient.Controllers
         }
 
 
-        /// <summary>
-        /// Get list of groups for current company
-        /// </summary>
-        [HttpGet("groups")]
-        public async Task<IActionResult> GetGroups()
-        {
-            var companyId = GetCompanyId();
-            var result = await _ipoGroupService.GetGroupsByCompanyAsync(companyId, null);
+        ///// <summary>
+        ///// Get list of groups for current company
+        ///// </summary>
+        //[HttpGet("groups")]
+        //public async Task<IActionResult> GetGroups()
+        //{
+        //    var companyId = GetCompanyId();
+        //    var result = await _ipoGroupService.GetGroupsByCompanyAsync(companyId, null);
 
-            if (!result.Success)
-                return StatusCode(result.ResponseCode ?? 400, result);
+        //    if (!result.Success)
+        //        return StatusCode(result.ResponseCode ?? 400, result);
 
-            return Ok(result);
-        }
+        //    return Ok(result);
+        //}
 
         // --------------------------
         // END IPO Group endpoints
@@ -217,7 +217,7 @@ namespace IPOClient.Controllers
         // Start Order endpoints
         // --------------------------
         /// <summary>
-        /// IPO Buy Place order
+        /// IPO Buy/Sell Place order
         /// </summary>
         [HttpPost("buyplaceorder")]
         public async Task<IActionResult> IPOBuyPlaceOrder([FromBody] IPOBuyerPlaceOrderRequest request)
@@ -226,6 +226,20 @@ namespace IPOClient.Controllers
             var companyId = GetCompanyId();
 
             var result = await _ipoBuyerPlaceOrderService.CreateIPOBuyerPlaceOrderAsync(request, userId, companyId);
+
+            if (!result.Success)
+                return StatusCode(result.ResponseCode ?? 400, result);
+
+            return Ok(result);
+        }
+        /// <summary>
+        /// Get place order  by OrderId
+        /// </summary>
+        [HttpGet("getorder/{orderId}")]
+        public async Task<IActionResult> GetPlaceOrderByOrderId(int orderId)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.GetPlaceOrderDataByIdAsync(orderId, companyId);
 
             if (!result.Success)
                 return StatusCode(result.ResponseCode ?? 400, result);
@@ -318,6 +332,21 @@ namespace IPOClient.Controllers
 
             return Ok(result);
         }
+
+        /// <summary>
+        /// Order status popup summary
+        /// </summary>
+        [HttpPost("orderstatussummary")]
+        public async Task<IActionResult> OrderStatusSummary([FromBody] OrderStatusFilterRequest request)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.GetOrderStatusSummaryAsync(request, companyId);
+            if (!result.Success)
+                return StatusCode(result.ResponseCode ?? 400, result);
+
+            return Ok(result);
+        }
+
         // --------------------------
         // End Order endpoints
         // --------------------------

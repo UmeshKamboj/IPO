@@ -1,10 +1,12 @@
 ﻿using IPOClient.Data;
 using IPOClient.Models.Entities;
+using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Requests.IPOMaster.Response;
 using IPOClient.Models.Responses;
 using IPOClient.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using System.Buffers;
 
 namespace IPOClient.Repositories.Implementations
 {
@@ -103,29 +105,26 @@ namespace IPOClient.Repositories.Implementations
             // Apply global search if provided
             if (!string.IsNullOrWhiteSpace(request.SearchValue))
             {
+                var search = request.SearchValue?.Trim().ToLower();
+                int? orderTypeMatch = Enum.GetValues(typeof(IPOOrderType)).Cast<IPOOrderType>()
+                .Where(e => e.ToString().ToLower().Contains(search)).Select(e => (int)e).FirstOrDefault();
+
+                int? orderCategoryMatch = Enum.GetValues(typeof(IPOOrderCategory)).Cast<IPOOrderCategory>()
+                    .Where(e => e.ToString().ToLower().Contains(search)).Select(e => (int)e).FirstOrDefault();
+
+                int? investorTypeMatch = Enum.GetValues(typeof(IPOInvestorType)).Cast<IPOInvestorType>()
+                    .Where(e => e.ToString().ToLower().Contains(search)).Select(e => (int)e).FirstOrDefault();
+
                 query = query.Where(o =>
-                 o.OrderChild.Any(c =>
-                 (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
-                 (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
-                 (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
-                 (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
-                 )
+                 // search
+                   (orderTypeMatch.HasValue && o.OrderType == orderTypeMatch.Value)
+                 || (orderCategoryMatch.HasValue && o.OrderCategory == orderCategoryMatch.Value)
+                 || (investorTypeMatch.HasValue && o.InvestorType == investorTypeMatch.Value)
+                 || ( o.PremiumStrikePrice == request.SearchValue)
+                 // 🔹 Group name
+                 || (o.BuyerMaster.Group.GroupName.Contains(search))
              );
             }
-
-            //switch (request.ModuleName.ToLower())
-            //{
-            //    case "buy":
-            //    case "sell":
-            //        query = query.Where(o =>
-            //            new[] { 1, 2 }.Contains(o.OrderCategory) &&
-            //            new[] { 1, 2, 3 }.Contains(o.InvestorType));
-            //        break;
-            //    case "all":
-            //    default:
-            //        //No extra filters (treat as ALL)
-            //        break;
-            //}
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId.Value);
             //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
@@ -339,6 +338,156 @@ namespace IPOClient.Repositories.Implementations
             return true;
         }
 
-       
+        public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId)
+        {
+            var response = new OrderStatusSummaryResponse();
+
+            var query = _context.BuyerOrders
+                .Include(o => o.BuyerMaster)
+                .Where(o =>
+                    o.BuyerMaster.CompanyId == companyId &&
+                    o.BuyerMaster.IPOId == request.IPOId &&
+                    o.BuyerMaster.IsActive)
+                .AsQueryable();
+
+            if (request.GroupId.HasValue&& request.GroupId>0)
+                query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId);
+
+            if (request.InvestorType.HasValue&& request.InvestorType>0)
+                query = query.Where(o => o.InvestorType == request.InvestorType);
+            if (request.OrderCategory.HasValue && request.OrderCategory > 0)
+                query = query.Where(o => o.OrderCategory == request.OrderCategory);
+
+            // =========================
+            // GROUPED DATA
+            // =========================
+            var grouped = await query
+                .GroupBy(o => new
+                {
+                    o.OrderCategory,
+                    o.InvestorType,
+                    o.OrderType,
+                    o.PremiumStrikePrice
+                })
+                .Select(g => new
+                {
+                    g.Key.OrderCategory,
+                    g.Key.InvestorType,
+                    g.Key.OrderType,
+                    g.Key.PremiumStrikePrice,
+                    Count = g.Sum(x => x.Quantity),
+                    Avg = g.Average(x => x.Rate),
+                    Amount = g.Sum(x => x.Quantity * x.Rate)
+                })
+                .ToListAsync();
+
+            // =========================
+            // KOSTAK & SUBJECT TO
+            // =========================
+            foreach (var row in grouped
+                .Where(x => x.OrderCategory == (int)IPOOrderCategory.Kostak
+                         || x.OrderCategory == (int)IPOOrderCategory.SubjectTo))
+            {
+                var categoryDict = row.OrderCategory == (int)IPOOrderCategory.Kostak
+                    ? response.Kostak
+                    : response.SubjectTo;
+
+                var investorKey = ((IPOInvestorType)row.InvestorType).ToString();
+
+                if (!categoryDict.ContainsKey(investorKey))
+                    categoryDict[investorKey] = new CategoryStatusBlock();
+
+                var block = categoryDict[investorKey];
+
+                var target = row.OrderType == (int)IPOOrderType.BUY
+                    ? block.Buy
+                    : block.Sell;
+
+                target.Count += row.Count;
+                target.Amount += row.Amount;
+                target.Avg = target.Count == 0 ? 0 : target.Amount / target.Count;
+            }
+
+            // NET calculation
+            void CalculateNet(Dictionary<string, CategoryStatusBlock> dict)
+            {
+                foreach (var item in dict.Values)
+                {
+                    item.Net.Count = item.Buy.Count - item.Sell.Count;
+                    item.Net.Amount = item.Buy.Amount - item.Sell.Amount;
+                    item.Net.Avg = item.Net.Count == 0 ? 0 : item.Net.Amount / item.Net.Count;
+                }
+            }
+
+            CalculateNet(response.Kostak);
+            CalculateNet(response.SubjectTo);
+
+            // =========================
+            // PREMIUM
+            // =========================
+            foreach (var row in grouped
+                .Where(x => x.OrderCategory == (int)IPOOrderCategory.Premium))
+            {
+                var target = row.OrderType == (int)IPOOrderType.BUY
+                    ? response.Premium.Buy
+                    : response.Premium.Sell;
+
+                target.Count += row.Count;
+                target.Amount += row.Amount;
+                target.Avg = target.Count == 0 ? 0 : target.Amount / target.Count;
+            }
+
+            response.Premium.Net.Count =
+                response.Premium.Buy.Count - response.Premium.Sell.Count;
+
+            response.Premium.Net.Amount =
+                response.Premium.Buy.Amount - response.Premium.Sell.Amount;
+
+            response.Premium.Net.Avg =
+                response.Premium.Net.Count == 0 ? 0 :
+                response.Premium.Net.Amount / response.Premium.Net.Count;
+
+            // =========================
+            // STRIKE PRICE (CALL / PUT)
+            // =========================
+            var strikeGroups = grouped
+                .Where(x => !string.IsNullOrEmpty(x.PremiumStrikePrice)&&x.PremiumStrikePrice!="Application" && x.PremiumStrikePrice != "Premium")
+                .GroupBy(x => x.PremiumStrikePrice);
+
+            foreach (var sg in strikeGroups)
+            {
+                var block = new StrikePriceBlock
+                {
+                    StrikePrice = decimal.Parse(sg.Key!)
+                };
+
+                var call = sg.Where(x => x.OrderType == (int)IPOOrderType.BUY);
+                var put = sg.Where(x => x.OrderType == (int)IPOOrderType.SELL);
+
+                block.Call_TotalShare = call.Sum(x => x.Count);
+                block.Call_Amount = call.Sum(x => x.Amount);
+                block.Call_Avg = block.Call_TotalShare == 0 ? 0 : block.Call_Amount / block.Call_TotalShare;
+
+                block.Put_TotalShare = put.Sum(x => x.Count);
+                block.Put_Amount = put.Sum(x => x.Amount);
+                block.Put_Avg = block.Put_TotalShare == 0 ? 0 : block.Put_Amount / block.Put_TotalShare;
+
+                response.StrikePrices.Add(block);
+            }
+
+            return response;
+        }
+
+        public async Task<IPO_BuyerOrder> GetPlaceOrderDataByIdAsync(int orderId, int companyId)
+        {
+            return await _context.BuyerOrders
+                 .Include(o => o.BuyerMaster)
+                 .Include(o => o.OrderChild)
+                 .Where(o =>
+                  o.OrderId == orderId &&
+                  o.BuyerMaster.CompanyId == companyId &&
+                  o.BuyerMaster.IsActive
+                  ).FirstOrDefaultAsync();
+        }
     }
 }
