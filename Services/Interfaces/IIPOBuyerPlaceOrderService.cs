@@ -13,6 +13,8 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData<BuyerOrderResponse>> GetPlaceOrderDataByIdAsync(int orderId, int companyId); //get place order data by order id
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId,int orderType);
+        Task<ReturnData<List<BuyerOrderResponse>>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<ReturnData<List<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId,int orderType);
         Task<ReturnData> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int modifiedByUserId);
         Task<ReturnData<OrderStatusSummaryResponse>> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId);
     }

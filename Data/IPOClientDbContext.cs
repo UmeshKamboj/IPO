@@ -79,6 +79,12 @@ namespace IPOClient.Data
             {
                 entity.HasKey(e => e.BuyerMasterId);
                 entity.ToTable("IPO_BuyerPlaceOrderMaster");
+
+                // Configure relationship with IPO_GroupMaster
+                entity.HasOne(m => m.Group)
+                      .WithMany()
+                      .HasForeignKey(m => m.GroupId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<IPO_BuyerOrder>(entity =>
@@ -93,6 +99,17 @@ namespace IPOClient.Data
                 // Specify precision and scale for Rate property
                 entity.Property(e => e.Rate)
                       .HasPrecision(18, 4); // 18 total digits, 4 decimal places
+            });
+
+            // Configure IPO_PlaceOrderChild table
+            modelBuilder.Entity<IPO_PlaceOrderChild>(entity =>
+            {
+                entity.HasKey(e => e.POChildId);
+                entity.ToTable("IPO_PlaceOrderChild");
+
+                entity.HasOne(c => c.IPOOrder)
+                      .WithMany(o => o.OrderChild)
+                      .HasForeignKey(c => c.OrderId);
             });
         }
     }
