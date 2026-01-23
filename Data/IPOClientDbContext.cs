@@ -82,12 +82,6 @@ namespace IPOClient.Data
             {
                 entity.HasKey(e => e.BuyerMasterId);
                 entity.ToTable("IPO_BuyerPlaceOrderMaster");
-
-                // Configure relationship with IPO_GroupMaster
-                entity.HasOne(m => m.Group)
-                      .WithMany()
-                      .HasForeignKey(m => m.GroupId)
-                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<IPO_BuyerOrder>(entity =>
@@ -113,6 +107,12 @@ namespace IPOClient.Data
                 entity.HasOne(c => c.IPOOrder)
                       .WithMany(o => o.OrderChild)
                       .HasForeignKey(c => c.OrderId);
+
+                // Configure relationship with IPO_GroupMaster
+                entity.HasOne(c => c.Group)
+                      .WithMany()
+                      .HasForeignKey(c => c.GroupId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Configure IPO_ClientSetup table
