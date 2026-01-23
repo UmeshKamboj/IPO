@@ -105,17 +105,21 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-        public async Task<ReturnData<List<GroupResponse>>> GetAllGroupsAsync(int companyId)
+        public async Task<ReturnData<List<GroupListResponse>>> GetGroupListAsync(int companyId)
         {
             try
             {
                 var groups = await _groupRepository.GetAllByCompanyAsync(companyId);
-                var responses = groups.Select(MapToResponse).ToList();
-                return ReturnData<List<GroupResponse>>.SuccessResponse(responses, "Groups retrieved successfully", 200);
+                var responses = groups.Select(g => new GroupListResponse
+                {
+                    IPOGroupId = g.IPOGroupId,
+                    GroupName = g.GroupName ?? string.Empty
+                }).ToList();
+                return ReturnData<List<GroupListResponse>>.SuccessResponse(responses, "Groups retrieved successfully", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<List<GroupResponse>>.ErrorResponse($"Error retrieving groups: {ex.Message}", 500);
+                return ReturnData<List<GroupListResponse>>.ErrorResponse($"Error retrieving groups: {ex.Message}", 500);
             }
         }
 
