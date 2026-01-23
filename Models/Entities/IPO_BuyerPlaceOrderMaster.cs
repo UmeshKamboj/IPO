@@ -48,6 +48,8 @@ namespace IPOClient.Models.Entities
         public DateTime? ModifiedDate { get; set; }
         public ICollection<IPO_PlaceOrderChild> OrderChild { get; set; } //order child items
 
+        public string? Remarks { get; set; } //comma separated remark IDs
+
     }
     public class IPO_PlaceOrderChild
     {
