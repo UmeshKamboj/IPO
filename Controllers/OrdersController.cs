@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace IPOClient.Controllers
 {
     [ApiController]
-    [Route("api/ipos")]
+    [Route("api/orders")]
     [Authorize]
     public class OrdersController : ControllerBase
     {

@@ -7,7 +7,7 @@ using System.Security.Claims;
 
 namespace IPOClient.Controllers
 {
-    [Route("api/ipos/")]
+    [Route("api/groups")]
     [ApiController]
     [Authorize]
     public class GroupsController : ControllerBase
@@ -18,15 +18,12 @@ namespace IPOClient.Controllers
         { 
             _groupService = groupService;
         } 
-
-        /// <summary>
-        
+         
 
         /// <summary>
         /// Get list of all groups for current company (no pagination, no filters)
-        /// </summary>
-        [HttpGet]
-        [HttpGet("groups/list")]
+        /// </summary> 
+        [HttpGet("list")]
         public async Task<IActionResult> GetGroups()
         {
             var companyId = GetCompanyId();
@@ -34,8 +31,7 @@ namespace IPOClient.Controllers
             if (!result.Success)
                 return StatusCode(result.ResponseCode ?? 500, result);
             return Ok(result);
-        }
-
+        } 
         // --------------------------
         // Advanced Group Operations (with pagination and filters)
         // --------------------------
@@ -43,7 +39,7 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Create a new group with advanced properties
         /// </summary>
-        [HttpPost("groups/create")]
+        [HttpPost("create")]
         public async Task<IActionResult> CreateAdvancedGroup([FromBody] CreateGroupRequest request)
         {
             var userId = GetUserId();
@@ -56,7 +52,7 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Update an existing group with advanced properties
         /// </summary>
-        [HttpPut("groups/update")]
+        [HttpPut("update")]
         public async Task<IActionResult> UpdateAdvancedGroup(int id, [FromBody] UpdateGroupRequest request)
         {
             if (id != request.IPOGroupId)
@@ -70,7 +66,7 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Delete a group (soft delete) - advanced version
         /// </summary>
-        [HttpDelete("groups/{id}/delete")]
+        [HttpDelete("{id}/delete")]
         public async Task<IActionResult> DeleteAdvancedGroup(int id)
         {
             var userId = GetUserId();
@@ -83,7 +79,7 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Get a group by ID with advanced properties
         /// </summary>
-        [HttpGet("groups/{id}")]
+        [HttpGet("{id}")]
         public async Task<IActionResult> GetAdvancedGroupById(int id)
         {
             var companyId = GetCompanyId();
@@ -94,7 +90,7 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Get groups with pagination, global search, and filters
         /// </summary>
-        [HttpPost("groups/all")]
+        [HttpPost("all")]
         public async Task<IActionResult> GetAdvancedGroups([FromBody] GroupFilterRequest request)
         {
             var companyId = GetCompanyId();
