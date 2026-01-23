@@ -83,12 +83,16 @@ builder.Services.AddDbContext<IPOClientDbContext>(options =>
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IIPORepository, IPORepository>();
 builder.Services.AddScoped<IIPOGroupRepository, IPOGroupRepository>();
+builder.Services.AddScoped<IGroupRepository, GroupRepository>();
 builder.Services.AddScoped<IIPOBuyerPlaceOrderRepository, IPOBuyerPlaceOrderRepository>();
+builder.Services.AddScoped<IClientSetupRepository, ClientSetupRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IIPOService, IPOService>();
 builder.Services.AddScoped<IIPOGroupService, IPOGroupService>();
+builder.Services.AddScoped<IGroupService, GroupService>();
 builder.Services.AddScoped<IIPOBuyerPlaceOrderService, IPOBuyerPlaceOrderService>();
+builder.Services.AddScoped<IClientSetupService, ClientSetupService>();
 
 // =======================
 // Background Services

@@ -118,7 +118,7 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<BuyerOrderResponse>.ErrorResponse($"Error retrieving place order data: {ex.Message}", 500);
             }
         }
-        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderPagedListAsync(OrderDetailFilterRequest request, int companyId,int ipoId)
+        public async Task<ReturnData<List<BuyerOrderResponse>>> GetOrderListAsync(OrderListRequest request, int companyId, int ipoId)
         {
             try
             {
@@ -137,23 +137,25 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<List<BuyerOrderResponse>>.ErrorResponse($"Error retrieving orders: {ex.Message}", 500);
             }
         }
-        public async Task<ReturnData<List<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
+        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
         {
             try
             {
-                var orders = await _buyerPlaceOrderRepository.GetOrderDetailListAsync(request, companyId, ipoId, orderType);
-                var responses = orders
-               .Select((order, index) => MapToOrderDetailResponse(
-                 order,
-                 srNo: index + 1
-                   ))
-                 .ToList();
+                var pagedResult = await _buyerPlaceOrderRepository.GetOrderDetailPagedListAsync(request, companyId, ipoId, orderType);
 
-                return ReturnData<List<BuyerOrderResponse>>.SuccessResponse(responses, "Order details retrieved successfully", 200);
+                var responses = pagedResult.Items?
+                    .Select((order, index) => MapToOrderDetailResponse(
+                        order,
+                        srNo: request.Skip + index + 1
+                    ))
+                    .ToList() ?? new List<BuyerOrderResponse>();
+
+                var result = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize);
+                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Order details retrieved successfully", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<List<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
+                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
             }
         }
 
@@ -260,6 +262,45 @@ namespace IPOClient.Services.Implementations
 
         }
 
-       
+        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetAllOrderChildrenWithSearchAsync(OrderDetailPagedRequest request, int companyId, int ipoId)
+        {
+            try
+            {
+                var pagedChildren = await _buyerPlaceOrderRepository.GetAllOrderChildrenWithSearchAsync(request, companyId, ipoId);
+
+                // Map PlaceOrderChild to BuyerOrderResponse
+                var responses = pagedChildren.Items?.Select(child => new BuyerOrderResponse
+                {
+                    POChildId = child.POChildId,
+                    GroupId = child.GroupId,
+                    GroupName = child.IPOOrder?.BuyerMaster?.Group?.GroupName,
+                    OrderId = child.OrderId,
+                    OrderType = child.IPOOrder?.OrderType ?? 0,
+                    OrderTypeName = child.IPOOrder != null ? ((IPOOrderType)child.IPOOrder.OrderType).ToString() : "",
+                    OrderCategory = child.IPOOrder?.OrderCategory ?? 0,
+                    OrderCategoryName = child.IPOOrder != null ? ((IPOOrderCategory)child.IPOOrder.OrderCategory).ToString() : "",
+                    InvestorType = child.IPOOrder?.InvestorType ?? 0,
+                    InvestorTypeName = child.IPOOrder != null ? ((IPOInvestorType)child.IPOOrder.InvestorType).ToString() : "",
+                    PremiumStrikePrice = child.IPOOrder?.PremiumStrikePrice,
+                    Quantity = child.Quantity,
+                    Rate = child.IPOOrder?.Rate ?? 0,
+                    DateTime = child.IPOOrder?.DateTime ?? DateTime.UtcNow,
+                    PanNumber = child.PANNumber,
+                    ClientName = child.ClientName,
+                    AllotedQty = child.AllotedQty,
+                    DematNumber = child.DematNumber,
+                    ApplicationNumber = child.ApplicationNo
+                }).ToList() ?? new List<BuyerOrderResponse>();
+
+                var pagedResult = new PagedResult<BuyerOrderResponse>(responses, pagedChildren.TotalCount, request.Skip, request.PageSize);
+                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(pagedResult, "Order children retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order children: {ex.Message}", 500);
+            }
+        }
+
+
     }
 }

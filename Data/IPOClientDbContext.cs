@@ -18,6 +18,9 @@ namespace IPOClient.Data
         public DbSet<IPO_BuyerPlaceOrderMaster> BuyerPlaceOrderMasters { get; set; }  //SELL/BUY Master table
         public DbSet<IPO_BuyerOrder> BuyerOrders { get; set; } //SELL/BUY Orders table
         public DbSet<IPO_PlaceOrderChild> ChildPlaceOrder { get; set; } //SELL/BUY Order Child table
+        public DbSet<IPO_ClientSetup> IPO_ClientSetup { get; set; }
+        public DbSet<IPO_ClientDeleteHistory> IPO_ClientDeleteHistory { get; set; }
+        public DbSet<IPO_ClientDeleteHistoryDetail> IPO_ClientDeleteHistoryDetail { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -110,6 +113,49 @@ namespace IPOClient.Data
                 entity.HasOne(c => c.IPOOrder)
                       .WithMany(o => o.OrderChild)
                       .HasForeignKey(c => c.OrderId);
+            });
+
+            // Configure IPO_ClientSetup table
+            modelBuilder.Entity<IPO_ClientSetup>(entity =>
+            {
+                entity.HasKey(e => e.ClientId);
+                entity.ToTable("IPO_ClientSetup");
+
+                entity.Property(e => e.PANNumber).HasMaxLength(10).IsRequired();
+                entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+                entity.Property(e => e.ClientDPId).HasMaxLength(100);
+                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
+                entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(c => c.Group)
+                      .WithMany()
+                      .HasForeignKey(c => c.GroupId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Configure IPO_ClientDeleteHistory table
+            modelBuilder.Entity<IPO_ClientDeleteHistory>(entity =>
+            {
+                entity.HasKey(e => e.HistoryId);
+                entity.ToTable("IPO_ClientDeleteHistory");
+
+                entity.Property(e => e.DeletedDate).HasDefaultValueSql("GETUTCDATE()");
+            });
+
+            // Configure IPO_ClientDeleteHistoryDetail table
+            modelBuilder.Entity<IPO_ClientDeleteHistoryDetail>(entity =>
+            {
+                entity.HasKey(e => e.DetailId);
+                entity.ToTable("IPO_ClientDeleteHistoryDetail");
+
+                entity.Property(e => e.PANNumber).HasMaxLength(10).IsRequired();
+                entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+                entity.Property(e => e.ClientDPId).HasMaxLength(100);
+
+                entity.HasOne(d => d.History)
+                      .WithMany(h => h.Details)
+                      .HasForeignKey(d => d.HistoryId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

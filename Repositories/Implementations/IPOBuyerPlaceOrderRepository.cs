@@ -31,12 +31,21 @@ namespace IPOClient.Repositories.Implementations
 
             foreach (var reqOrder in request.Orders)
             {
+                // Determine PremiumStrikePrice based on ApplicateRate
+                // Skip logic if OrderCategory is CALL (4) or PUT (5)
+                string? premiumStrikePrice = reqOrder.PremiumStrikePrice;
+                if (reqOrder.OrderCategory != 4 && reqOrder.OrderCategory != 5)
+                {
+                    premiumStrikePrice = reqOrder.ApplicateRate ? "Premium" : "Application";
+                }
+
                 var order = new IPO_BuyerOrder
                 {
                     OrderType = reqOrder.OrderType,
                     OrderCategory = reqOrder.OrderCategory,
                     InvestorType = reqOrder.InvestorType,
-                    PremiumStrikePrice = reqOrder.PremiumStrikePrice,
+                    PremiumStrikePrice = premiumStrikePrice,
+                    ApplicateRate = reqOrder.ApplicateRate,
                     Quantity = reqOrder.Quantity,
                     Rate = reqOrder.Rate,
                     DateTime = request.DateTime,
@@ -52,6 +61,7 @@ namespace IPOClient.Repositories.Implementations
                     order.OrderChild.Add(new IPO_PlaceOrderChild
                     {
                         Quantity = 1,
+                        GroupId = request.GroupId, // Set GroupId from master
                         CreatedBy = userId,
                         CompanyId = companyId,
                         ChildOrderCreatedDate= DateTime.UtcNow,
@@ -157,7 +167,7 @@ namespace IPOClient.Repositories.Implementations
 
         }
 
-        public async Task<List<IPO_BuyerOrder>> GetOrderListAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        public async Task<List<IPO_BuyerOrder>> GetOrderListAsync(OrderListRequest request, int companyId, int ipoId)
         {
             // Base query
             var query = _context.BuyerOrders
@@ -172,28 +182,9 @@ namespace IPOClient.Repositories.Implementations
                 o.BuyerMaster.CompanyId == companyId &&
                 o.BuyerMaster.IPOId == ipoId);
 
-            // Apply global search if provided
-            //if (!string.IsNullOrWhiteSpace(request.SearchValue))
-            //{
-            //    query = query.Where(o =>
-            //     o.OrderChild.Any(c =>
-            //     (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
-            //     (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
-            //     (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
-            //     (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
-            //     )
-            // );
-            //}
-
-            // Apply group filter
+            // Apply group filter only (no pagination, no global search)
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId.Value);
-
-            // Apply category and investor type filters if provided
-            //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
-            //    query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
-            //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
-            //    query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
 
             query = query.OrderByDescending(o => o.BuyerMaster.CreatedDate);
 
@@ -260,46 +251,56 @@ namespace IPOClient.Repositories.Implementations
             return result;
         }
 
-        public async Task<List<IPO_PlaceOrderChild>> GetOrderDetailListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
+        public async Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType)
         {
             var query = _context.ChildPlaceOrder
-         .Include(c => c.IPOOrder)
-             .ThenInclude(o => o.BuyerMaster)
-                 .ThenInclude(m => m.Group)
-         .AsQueryable();
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                        .ThenInclude(m => m.Group)
+                .AsQueryable();
 
             query = query.Where(c =>
                 c.IPOOrder.BuyerMaster.IsActive &&
-                c.IPOOrder.BuyerMaster.CompanyId == companyId && c.IPOOrder.OrderType == orderType &&
-                c.IPOOrder.BuyerMaster.IPOId == ipoId && new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) && new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
+                c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                c.IPOOrder.OrderType == orderType &&
+                c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) &&
+                new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
             );
 
-            // Apply search filter
-            //if (!string.IsNullOrWhiteSpace(request.SearchValue))
-            //{
-            //    query = query.Where(c =>
-            //        (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
-            //        (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
-            //        (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
-            //        (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
-            //    );
-            //}
+            // Apply global search filter
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                query = query.Where(c =>
+                    (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
+                    (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
+                    (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
+                    (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
+                );
+            }
 
             // Apply group filter
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(c => c.IPOOrder.BuyerMaster.GroupId == request.GroupId.Value);
 
-            //// Apply category and investor type filters if provided
-            //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
-            //    query = query.Where(c => c.IPOOrder.OrderCategory == request.OrderCategoryId.Value);
+            // Apply category and investor type filters
+            if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+                query = query.Where(c => c.IPOOrder.OrderCategory == request.OrderCategoryId.Value);
 
-            //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
-            //    query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
+            if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+                query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
 
-            query = query.OrderByDescending(c => c.IPOOrder.BuyerMaster.CreatedDate);
+            // Get total count before pagination
+            var totalCount = await query.CountAsync();
 
-            // Return all results without pagination
-            return await query.ToListAsync();
+            // Order and apply pagination
+            query = query.OrderByDescending(c => c.IPOOrder.BuyerMaster.CreatedDate)
+                         .Skip(request.Skip)
+                         .Take(request.PageSize);
+
+            var items = await query.ToListAsync();
+
+            return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
         }
 
         public async Task<bool> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId)
@@ -488,6 +489,42 @@ namespace IPOClient.Repositories.Implementations
                   o.BuyerMaster.CompanyId == companyId &&
                   o.BuyerMaster.IsActive
                   ).FirstOrDefaultAsync();
+        }
+
+        public async Task<PagedResult<IPO_PlaceOrderChild>> GetAllOrderChildrenWithSearchAsync(OrderDetailPagedRequest request, int companyId, int ipoId)
+        {
+            var query = _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                        .ThenInclude(m => m.Group)
+                .Where(c => c.CompanyId == companyId &&
+                           c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                           c.IPOOrder.BuyerMaster.IsActive);
+
+            // Global search across multiple fields
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                var searchLower = request.SearchValue.ToLower();
+                query = query.Where(c =>
+                    (c.PANNumber != null && c.PANNumber.ToLower().Contains(searchLower)) ||
+                    (c.ClientName != null && c.ClientName.ToLower().Contains(searchLower)) ||
+                    (c.DematNumber != null && c.DematNumber.ToLower().Contains(searchLower)) ||
+                    (c.ApplicationNo != null && c.ApplicationNo.ToLower().Contains(searchLower)) ||
+                    (c.IPOOrder.BuyerMaster.Group != null &&
+                     c.IPOOrder.BuyerMaster.Group.GroupName != null &&
+                     c.IPOOrder.BuyerMaster.Group.GroupName.ToLower().Contains(searchLower))
+                );
+            }
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderByDescending(c => c.ChildOrderCreatedDate)
+                .Skip(request.Skip)
+                .Take(request.PageSize)
+                .ToListAsync();
+
+            return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
         }
     }
 }

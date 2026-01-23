@@ -16,28 +16,6 @@ namespace IPOClient.Services.Implementations
             _groupRepository = groupRepository;
         }
 
-        public async Task<ReturnData<IPOGroupResponse>> CreateGroupAsync(CreateIPOGroupRequest request, int createdByUserId, int companyId)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(request.GroupName))
-                    return ReturnData<IPOGroupResponse>.ErrorResponse("GroupName is required", 400);
-
-                var groupId = await _groupRepository.CreateAsync(request, createdByUserId, companyId);
-                var created = await _groupRepository.GetByIdAsync(groupId, companyId);
-
-                if (created == null)
-                    return ReturnData<IPOGroupResponse>.ErrorResponse("Failed to retrieve created group", 500);
-
-                var dto = MapToResponse(created);
-                return ReturnData<IPOGroupResponse>.SuccessResponse(dto, "Group created successfully", 201);
-            }
-            catch (Exception ex)
-            {
-                return ReturnData<IPOGroupResponse>.ErrorResponse($"Error creating group: {ex.Message}", 500);
-            }
-        }
-
         public async Task<ReturnData> UpdateGroupAsync(int id, CreateIPOGroupRequest request, int modifiedByUserId)
         {
             try

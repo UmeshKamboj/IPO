@@ -36,6 +36,7 @@ namespace IPOClient.Models.Entities
         public int OrderCategory { get; set; }  // Retail / SHNI / BHNI / Premium / Call / Put / Subject To
         public int InvestorType { get; set; }  // OPTIONS / PREMIUM / BHNI / SHNI
         public string? PremiumStrikePrice { get; set; } // nullable for non-options
+        public bool ApplicateRate { get; set; } = false; // If true: Premium, If false: Application
         public int Quantity { get; set; }
         public decimal Rate { get; set; }
         public DateTime DateTime { get; set; } = DateTime.UtcNow;
@@ -58,6 +59,7 @@ namespace IPOClient.Models.Entities
         public IPO_BuyerOrder IPOOrder { get; set; }
 
         public int Quantity { get; set; } = 1;
+        public int GroupId { get; set; } // Added GroupId for easier querying
 
         public string? PANNumber { get; set; }
         public string? ClientName { get; set; }

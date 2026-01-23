@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IPOClient.Migrations
 {
     [DbContext(typeof(IPOClientDbContext))]
-    [Migration("20260122110110_AddOpenIPOPriceToIPOMaster")]
-    partial class AddOpenIPOPriceToIPOMaster
+    [Migration("20260122181214_MakeIPOIdNullableInGroupMaster")]
+    partial class MakeIPOIdNullableInGroupMaster
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -82,6 +82,9 @@ namespace IPOClient.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OrderId"));
+
+                    b.Property<bool>("ApplicateRate")
+                        .HasColumnType("bit");
 
                     b.Property<int>("BuyerMasterId")
                         .HasColumnType("int");
@@ -177,6 +180,9 @@ namespace IPOClient.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IPOGroupId"));
 
+                    b.Property<string>("Address")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("CompanyId")
                         .HasColumnType("int");
 
@@ -188,11 +194,14 @@ namespace IPOClient.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<string>("Email")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("GroupName")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int>("IPOId")
+                    b.Property<int?>("IPOId")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsActive")
@@ -200,11 +209,17 @@ namespace IPOClient.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
 
+                    b.Property<string>("MobileNo")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("Remark")
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("IPOGroupId");
 
@@ -442,9 +457,7 @@ namespace IPOClient.Migrations
                 {
                     b.HasOne("IPOClient.Models.Entities.IPO_IPOMaster", "IPOMaster")
                         .WithMany()
-                        .HasForeignKey("IPOId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("IPOId");
 
                     b.Navigation("IPOMaster");
                 });

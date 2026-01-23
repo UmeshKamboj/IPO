@@ -8,6 +8,10 @@ namespace IPOClient.Models.Entities
         [Key]
         public int IPOGroupId { get; set; }
         public string? GroupName { get; set; }
+        public string? MobileNo { get; set; }
+        public string? Email { get; set; }
+        public string? Address { get; set; }
+        public string? Remark { get; set; }
 
         public int CompanyId { get; set; }
 
@@ -20,7 +24,7 @@ namespace IPOClient.Models.Entities
         public int? ModifiedBy { get; set; }
 
         public DateTime? ModifiedDate { get; set; }
-        public int IPOId { get; set; }
+        public int? IPOId { get; set; }
 
         [ForeignKey(nameof(IPOId))]
         public IPO_IPOMaster? IPOMaster { get; set; }
