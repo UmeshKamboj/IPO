@@ -29,4 +29,13 @@ namespace IPOClient.Models.Requests.Group
     {
         public int? IPOId { get; set; }
     }
+
+    /// <summary>
+    /// Simple response for group list dropdown
+    /// </summary>
+    public class GroupListResponse
+    {
+        public int IPOGroupId { get; set; }
+        public string GroupName { get; set; } = string.Empty;
+    }
 }

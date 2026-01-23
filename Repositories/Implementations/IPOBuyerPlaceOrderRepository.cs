@@ -21,7 +21,6 @@ namespace IPOClient.Repositories.Implementations
             var master = new IPO_BuyerPlaceOrderMaster
             {
                 IPOId = request.IPOId,
-                GroupId = request.GroupId,
                 CreatedBy = userId,
                 CompanyId = companyId,
                 CreatedDate = DateTime.UtcNow,
@@ -92,6 +91,7 @@ namespace IPOClient.Repositories.Implementations
             var orders = await _context.BuyerOrders
               .Include(o => o.BuyerMaster)
               .Include(o => o.OrderChild)
+                  .ThenInclude(c => c.Group)
               .Where(o => o.BuyerMaster.IPOId == ipoId
                 && o.BuyerMaster.CompanyId == companyId
                 && o.BuyerMaster.IsActive)
@@ -130,8 +130,8 @@ namespace IPOClient.Repositories.Implementations
             // Base query
             var query = _context.BuyerOrders
                 .Include(o => o.BuyerMaster) // Parent included
-                   .ThenInclude(m => m.Group)
-                   .Include(o => o.OrderChild)
+                .Include(o => o.OrderChild)
+                    .ThenInclude(c => c.Group)
                 .AsQueryable();
             // Only active and belong to company
             query = query.Where(o =>
@@ -158,12 +158,13 @@ namespace IPOClient.Repositories.Implementations
                  || (orderCategoryMatch.HasValue && o.OrderCategory == orderCategoryMatch.Value)
                  || (investorTypeMatch.HasValue && o.InvestorType == investorTypeMatch.Value)
                  || ( o.PremiumStrikePrice == request.SearchValue)
-                 // 🔹 Group name
-                 || (o.BuyerMaster.Group.GroupName.Contains(search))
+                 // 🔹 Group name - search through child's Group
+                 || (o.OrderChild.Any(c => c.Group != null && c.Group.GroupName.Contains(search)))
              );
             }
+            // Filter by GroupId through child table
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
-                query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId.Value);
+                query = query.Where(o => o.OrderChild.Any(c => c.GroupId == request.GroupId.Value));
             //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
             //    query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
             //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
@@ -199,8 +200,8 @@ namespace IPOClient.Repositories.Implementations
             // Base query
             var query = _context.BuyerOrders
                 .Include(o => o.BuyerMaster)
-                   .ThenInclude(m => m.Group)
-                   .Include(o => o.OrderChild)
+                .Include(o => o.OrderChild)
+                    .ThenInclude(c => c.Group)
                 .AsQueryable();
 
             // Only active and belong to company
@@ -209,9 +210,9 @@ namespace IPOClient.Repositories.Implementations
                 o.BuyerMaster.CompanyId == companyId &&
                 o.BuyerMaster.IPOId == ipoId);
 
-            // Apply group filter only (no pagination, no global search)
+            // Apply group filter through child table (no pagination, no global search)
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
-                query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId.Value);
+                query = query.Where(o => o.OrderChild.Any(c => c.GroupId == request.GroupId.Value));
 
             query = query.OrderByDescending(o => o.BuyerMaster.CreatedDate);
 
@@ -224,7 +225,7 @@ namespace IPOClient.Repositories.Implementations
             var query = _context.ChildPlaceOrder
          .Include(c => c.IPOOrder)
              .ThenInclude(o => o.BuyerMaster)
-                 .ThenInclude(m => m.Group)
+         .Include(c => c.Group)
          .AsQueryable();
 
             query = query.Where(c =>
@@ -242,9 +243,9 @@ namespace IPOClient.Repositories.Implementations
                 );
             }
 
-            // Filters
+            // Filters - GroupId filter on child table directly
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
-                query = query.Where(c => c.IPOOrder.BuyerMaster.GroupId == request.GroupId.Value);
+                query = query.Where(c => c.GroupId == request.GroupId.Value);
 
             if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
                 query = query.Where(c => c.IPOOrder.OrderCategory == request.OrderCategoryId.Value);
@@ -283,8 +284,7 @@ namespace IPOClient.Repositories.Implementations
             var query = _context.ChildPlaceOrder
                 .Include(c => c.IPOOrder)
                     .ThenInclude(o => o.BuyerMaster)
-                        .ThenInclude(m => m.Group)
-
+                .Include(c => c.Group)
                 .AsQueryable();
 
             query = query.Where(c =>
@@ -307,9 +307,9 @@ namespace IPOClient.Repositories.Implementations
                 );
             }
 
-            // Apply group filter
+            // Apply group filter on child table directly
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
-                query = query.Where(c => c.IPOOrder.BuyerMaster.GroupId == request.GroupId.Value);
+                query = query.Where(c => c.GroupId == request.GroupId.Value);
 
             // Apply category and investor type filters
             if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
@@ -399,14 +399,16 @@ namespace IPOClient.Repositories.Implementations
 
             var query = _context.BuyerOrders
                 .Include(o => o.BuyerMaster)
+                .Include(o => o.OrderChild)
                 .Where(o =>
                     o.BuyerMaster.CompanyId == companyId &&
                     o.BuyerMaster.IPOId == request.IPOId &&
                     o.BuyerMaster.IsActive)
                 .AsQueryable();
 
+            // Filter by GroupId through child table
             if (request.GroupId.HasValue&& request.GroupId>0)
-                query = query.Where(o => o.BuyerMaster.GroupId == request.GroupId);
+                query = query.Where(o => o.OrderChild.Any(c => c.GroupId == request.GroupId));
 
             if (request.InvestorType.HasValue&& request.InvestorType>0)
                 query = query.Where(o => o.InvestorType == request.InvestorType);
@@ -538,6 +540,7 @@ namespace IPOClient.Repositories.Implementations
             return await _context.BuyerOrders
                  .Include(o => o.BuyerMaster)
                  .Include(o => o.OrderChild)
+                     .ThenInclude(c => c.Group)
                  .Where(o =>
                   o.OrderId == orderId &&
                   o.BuyerMaster.CompanyId == companyId &&
@@ -550,7 +553,7 @@ namespace IPOClient.Repositories.Implementations
             var query = _context.ChildPlaceOrder
                 .Include(c => c.IPOOrder)
                     .ThenInclude(o => o.BuyerMaster)
-                        .ThenInclude(m => m.Group)
+                .Include(c => c.Group)
                 .Where(c => c.CompanyId == companyId &&
                            c.IPOOrder.BuyerMaster.IPOId == ipoId &&
                            c.IPOOrder.BuyerMaster.IsActive);
@@ -564,11 +567,15 @@ namespace IPOClient.Repositories.Implementations
                     (c.ClientName != null && c.ClientName.ToLower().Contains(searchLower)) ||
                     (c.DematNumber != null && c.DematNumber.ToLower().Contains(searchLower)) ||
                     (c.ApplicationNo != null && c.ApplicationNo.ToLower().Contains(searchLower)) ||
-                    (c.IPOOrder.BuyerMaster.Group != null &&
-                     c.IPOOrder.BuyerMaster.Group.GroupName != null &&
-                     c.IPOOrder.BuyerMaster.Group.GroupName.ToLower().Contains(searchLower))
+                    (c.Group != null &&
+                     c.Group.GroupName != null &&
+                     c.Group.GroupName.ToLower().Contains(searchLower))
                 );
             }
+
+            // Apply group filter on child table directly
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
+                query = query.Where(c => c.GroupId == request.GroupId.Value);
 
             var totalCount = await query.CountAsync();
 
