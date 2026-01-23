@@ -10,6 +10,6 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData> DeleteGroupAsync(int id, int userId, int companyId);
         Task<ReturnData<GroupResponse>> GetGroupByIdAsync(int id, int companyId);
         Task<ReturnData<PagedResult<GroupResponse>>> GetGroupsAsync(GroupFilterRequest request, int companyId);
-        Task<ReturnData<List<GroupResponse>>> GetAllGroupsAsync(int companyId);
+        Task<ReturnData<List<GroupListResponse>>> GetGroupListAsync(int companyId);
     }
 }

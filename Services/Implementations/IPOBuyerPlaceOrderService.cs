@@ -56,8 +56,10 @@ namespace IPOClient.Services.Implementations
 
                 foreach (var (order, index) in orders.Select((o, i) => (o, i)))
                 {
-                    // fetch group name separately
-                    var group = await _groupRepository.GetByIdAsync(order.BuyerMaster.GroupId, companyId);
+                    // Get GroupId from first child (all children have same GroupId)
+                    var firstChild = order.OrderChild?.FirstOrDefault();
+                    var groupId = firstChild?.GroupId ?? 0;
+                    var group = groupId > 0 ? await _groupRepository.GetByIdAsync(groupId, companyId) : null;
 
                     response.Add(new BuyerOrderResponse
                     {
@@ -93,12 +95,14 @@ namespace IPOClient.Services.Implementations
                 if (order == null)
                     return ReturnData<BuyerOrderResponse>
                         .ErrorResponse("Order not found", 404);
+                // Get GroupId from first child (all children have same GroupId)
+                var firstChild = order.OrderChild?.FirstOrDefault();
                 var response = new BuyerOrderResponse
                 {
                     SrNo = 1, // single record
                     OrderId = order.OrderId,
                     BuyerMasterId = order.BuyerMaster.BuyerMasterId,
-                    GroupName = order.BuyerMaster.Group?.GroupName ?? "-",
+                    GroupName = firstChild?.Group?.GroupName ?? "-",
                     OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                     OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
                     InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
@@ -108,9 +112,9 @@ namespace IPOClient.Services.Implementations
                     DateTime = order.DateTime,
                     OrderCategory=order.OrderCategory,
                     OrderType=order.OrderType,
-                    InvestorType=order.InvestorType,
-                    GroupId=order.BuyerMaster.GroupId,
+                    InvestorType=order.InvestorType, 
                     Remark=order.Remarks
+                    GroupId=firstChild?.GroupId ?? 0
                 };
 
                 return ReturnData<BuyerOrderResponse>.SuccessResponse(response, "Order retrieved successfully", 200);
@@ -193,11 +197,13 @@ namespace IPOClient.Services.Implementations
         // MAP ENTITY TO RESPONSE DTO
         private BuyerPlaceOrderResponse MapToIPOResponse(IPO_BuyerPlaceOrderMaster buyer)
         {
+            // Get GroupId from first child of first order (all children have same GroupId)
+            var firstChild = buyer.Orders?.FirstOrDefault()?.OrderChild?.FirstOrDefault();
             return new BuyerPlaceOrderResponse
             {
                 BuyerMasterId = buyer.BuyerMasterId,
                 IPOId = buyer.IPOId,
-                GroupId = buyer.GroupId,
+                GroupId = firstChild?.GroupId ?? 0,
                 Orders = buyer.Orders.Select(o => new BuyerOrderResponse
                 {
                     OrderId = o.OrderId,
@@ -225,7 +231,7 @@ namespace IPOClient.Services.Implementations
                 OrderId = order.OrderId,
                 BuyerMasterId = master.BuyerMasterId,
 
-                GroupName = master.Group?.GroupName,
+                GroupName = child.Group?.GroupName,
 
                 OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                 OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
@@ -248,12 +254,14 @@ namespace IPOClient.Services.Implementations
         }
         private BuyerOrderResponse MapToOrderResponse(IPO_BuyerOrder order, int srNo)
         {
+            // Get Group from first child (all children have same GroupId)
+            var firstChild = order?.OrderChild?.FirstOrDefault();
             return new BuyerOrderResponse
             {
                 SrNo = srNo,
                 OrderId = order.OrderId,
                 BuyerMasterId = order.BuyerMaster?.BuyerMasterId ?? 0,
-                GroupName = order?.BuyerMaster?.Group?.GroupName,
+                GroupName = firstChild?.Group?.GroupName,
                 OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                 OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
                 InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
@@ -269,38 +277,39 @@ namespace IPOClient.Services.Implementations
         {
             try
             {
-                var pagedChildren = await _buyerPlaceOrderRepository.GetAllOrderChildrenWithSearchAsync(request, companyId, ipoId);
+                // Get orders from IPO_BuyerOrder table (master order level, not child level)
+                var pagedOrders = await _buyerPlaceOrderRepository.GetOrderPagedListAsync(request, companyId, ipoId);
 
-                // Map PlaceOrderChild to BuyerOrderResponse
-                var responses = pagedChildren.Items?.Select(child => new BuyerOrderResponse
-                {
-                    POChildId = child.POChildId,
-                    GroupId = child.GroupId,
-                    GroupName = child.IPOOrder?.BuyerMaster?.Group?.GroupName,
-                    OrderId = child.OrderId,
-                    OrderType = child.IPOOrder?.OrderType ?? 0,
-                    OrderTypeName = child.IPOOrder != null ? ((IPOOrderType)child.IPOOrder.OrderType).ToString() : "",
-                    OrderCategory = child.IPOOrder?.OrderCategory ?? 0,
-                    OrderCategoryName = child.IPOOrder != null ? ((IPOOrderCategory)child.IPOOrder.OrderCategory).ToString() : "",
-                    InvestorType = child.IPOOrder?.InvestorType ?? 0,
-                    InvestorTypeName = child.IPOOrder != null ? ((IPOInvestorType)child.IPOOrder.InvestorType).ToString() : "",
-                    PremiumStrikePrice = child.IPOOrder?.PremiumStrikePrice,
-                    Quantity = child.Quantity,
-                    Rate = child.IPOOrder?.Rate ?? 0,
-                    DateTime = child.IPOOrder?.DateTime ?? DateTime.UtcNow,
-                    PanNumber = child.PANNumber,
-                    ClientName = child.ClientName,
-                    AllotedQty = child.AllotedQty,
-                    DematNumber = child.DematNumber,
-                    ApplicationNumber = child.ApplicationNo
+                // Map IPO_BuyerOrder to BuyerOrderResponse
+                var responses = pagedOrders.Items?.Select((order, index) => {
+                    var firstChild = order.OrderChild?.FirstOrDefault();
+                    return new BuyerOrderResponse
+                    {
+                        SrNo = request.Skip + index + 1,
+                        OrderId = order.OrderId,
+                        BuyerMasterId = order.BuyerMaster?.BuyerMasterId ?? 0,
+                        GroupId = firstChild?.GroupId ?? 0,
+                        GroupName = firstChild?.Group?.GroupName ?? "-",
+                        OrderType = order.OrderType,
+                        OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
+                        OrderCategory = order.OrderCategory,
+                        OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
+                        InvestorType = order.InvestorType,
+                        InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
+                        PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
+                        Quantity = order.Quantity,
+                        Rate = order.Rate,
+                        DateTime = order.DateTime
+                    };
                 }).ToList() ?? new List<BuyerOrderResponse>();
 
-                var pagedResult = new PagedResult<BuyerOrderResponse>(responses, pagedChildren.TotalCount, request.Skip, request.PageSize);
-                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(pagedResult, "Order children retrieved successfully", 200);
+                var pagedResult = new PagedResult<BuyerOrderResponse>(responses, pagedOrders.TotalCount, request.Skip, request.PageSize);
+                pagedResult.Extras = pagedOrders.Extras; // Pass through extras like totalApplications, pendingPanApplications
+                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(pagedResult, "Orders retrieved successfully", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order children: {ex.Message}", 500);
+                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving orders: {ex.Message}", 500);
             }
         }
 

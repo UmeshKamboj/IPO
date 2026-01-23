@@ -8,11 +8,7 @@ namespace IPOClient.Models.Entities
     {
         [Key]
         public int BuyerMasterId { get; set; }
-        public int IPOId { get; set; } 
-        public int GroupId { get; set; }
-        // Navigation to Group
-        [ForeignKey(nameof(GroupId))]
-        public IPO_GroupMaster? Group { get; set; }
+        public int IPOId { get; set; }
         public ICollection<IPO_BuyerOrder> Orders { get; set; }
         // Audit Fields 
         public int? CreatedBy { get; set; }
@@ -62,6 +58,10 @@ namespace IPOClient.Models.Entities
 
         public int Quantity { get; set; } = 1;
         public int GroupId { get; set; } // Added GroupId for easier querying
+
+        // Navigation to Group
+        [ForeignKey(nameof(GroupId))]
+        public IPO_GroupMaster? Group { get; set; }
 
         public string? PANNumber { get; set; }
         public string? ClientName { get; set; }
