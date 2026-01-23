@@ -35,6 +35,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public int? AllotedQty { get; set; }
         public string? DematNumber { get; set; }
         public string? ApplicationNumber { get; set; }
+        public string? Remark { get; set; }
 
     }
     
