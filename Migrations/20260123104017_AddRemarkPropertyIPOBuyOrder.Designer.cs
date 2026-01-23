@@ -4,6 +4,7 @@ using IPOClient.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IPOClient.Migrations
 {
     [DbContext(typeof(IPOClientDbContext))]
-    partial class IPOClientDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260123104017_AddRemarkPropertyIPOBuyOrder")]
+    partial class AddRemarkPropertyIPOBuyOrder
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -150,6 +153,9 @@ namespace IPOClient.Migrations
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("GroupId")
+                        .HasColumnType("int");
+
                     b.Property<int>("IPOId")
                         .HasColumnType("int");
 
@@ -163,6 +169,8 @@ namespace IPOClient.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("BuyerMasterId");
+
+                    b.HasIndex("GroupId");
 
                     b.ToTable("IPO_BuyerPlaceOrderMaster", (string)null);
                 });
@@ -507,8 +515,6 @@ namespace IPOClient.Migrations
 
                     b.HasKey("POChildId");
 
-                    b.HasIndex("GroupId");
-
                     b.HasIndex("OrderId");
 
                     b.ToTable("IPO_PlaceOrderChild", (string)null);
@@ -608,6 +614,17 @@ namespace IPOClient.Migrations
                     b.Navigation("BuyerMaster");
                 });
 
+            modelBuilder.Entity("IPOClient.Models.Entities.IPO_BuyerPlaceOrderMaster", b =>
+                {
+                    b.HasOne("IPOClient.Models.Entities.IPO_GroupMaster", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Group");
+                });
+
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_ClientDeleteHistoryDetail", b =>
                 {
                     b.HasOne("IPOClient.Models.Entities.IPO_ClientDeleteHistory", "History")
@@ -650,19 +667,11 @@ namespace IPOClient.Migrations
 
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_PlaceOrderChild", b =>
                 {
-                    b.HasOne("IPOClient.Models.Entities.IPO_GroupMaster", "Group")
-                        .WithMany()
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("IPOClient.Models.Entities.IPO_BuyerOrder", "IPOOrder")
                         .WithMany("OrderChild")
                         .HasForeignKey("OrderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Group");
 
                     b.Navigation("IPOOrder");
                 });

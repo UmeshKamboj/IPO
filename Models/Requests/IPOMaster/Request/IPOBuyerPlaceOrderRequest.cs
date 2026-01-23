@@ -12,6 +12,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Request
         [Required(ErrorMessage = "Date and time is required")]
         public DateTime DateTime { get; set; }
         public List<BuyerOrderRequest>? Orders { get; set; }
+        public string? RemarksIds { get; set; } //comma separated remark IDs
 
 
     }
