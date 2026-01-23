@@ -7,7 +7,7 @@ using System.Security.Claims;
 
 namespace IPOClient.Controllers
 {
-    [Route("api/ipos/groups")]
+    [Route("api/ipos/")]
     [ApiController]
     [Authorize]
     public class GroupsController : ControllerBase
