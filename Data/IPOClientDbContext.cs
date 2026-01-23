@@ -21,7 +21,7 @@ namespace IPOClient.Data
         public DbSet<IPO_ClientSetup> IPO_ClientSetup { get; set; }
         public DbSet<IPO_ClientDeleteHistory> IPO_ClientDeleteHistory { get; set; }
         public DbSet<IPO_ClientDeleteHistoryDetail> IPO_ClientDeleteHistoryDetail { get; set; }
-
+        public DbSet<IPO_Order_Remark> IPO_OrderRemark { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

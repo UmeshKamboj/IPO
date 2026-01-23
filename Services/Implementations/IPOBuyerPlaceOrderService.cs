@@ -73,7 +73,8 @@ namespace IPOClient.Services.Implementations
                         PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
                         Quantity = order.Quantity,
                         Rate = order.Rate,
-                        DateTime = order.DateTime
+                        DateTime = order.DateTime,
+                        Remark=order.Remarks
                     });
                 }
 
@@ -111,7 +112,8 @@ namespace IPOClient.Services.Implementations
                     DateTime = order.DateTime,
                     OrderCategory=order.OrderCategory,
                     OrderType=order.OrderType,
-                    InvestorType=order.InvestorType,
+                    InvestorType=order.InvestorType, 
+                    Remark=order.Remarks
                     GroupId=firstChild?.GroupId ?? 0
                 };
 
@@ -245,7 +247,8 @@ namespace IPOClient.Services.Implementations
                 ClientName = child.ClientName ?? "",
                 AllotedQty = child.AllotedQty ?? 0,
                 DematNumber = child.DematNumber ?? "",
-                ApplicationNumber = child.ApplicationNo ?? ""
+                ApplicationNumber = child.ApplicationNo ?? "",
+                Remark= order.Remarks
             };
 
         }

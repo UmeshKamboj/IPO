@@ -51,7 +51,8 @@ namespace IPOClient.Repositories.Implementations
                     CreatedBy = userId,
                     CompanyId = companyId,
                     OrderCreatedDate= DateTime.UtcNow,
-                    OrderChild = new List<IPO_PlaceOrderChild>()
+                    OrderChild = new List<IPO_PlaceOrderChild>(),
+                    Remarks= request.RemarksIds
                 };
 
                 // split
@@ -87,16 +88,42 @@ namespace IPOClient.Repositories.Implementations
 
         public async Task<List<IPO_BuyerOrder>> GetTopFivePlaceOrderListAsync(int ipoId, int companyId)
         {
-            return await _context.BuyerOrders
+            var orders = await _context.BuyerOrders
               .Include(o => o.BuyerMaster)
               .Include(o => o.OrderChild)
                   .ThenInclude(c => c.Group)
               .Where(o => o.BuyerMaster.IPOId == ipoId
                 && o.BuyerMaster.CompanyId == companyId
                 && o.BuyerMaster.IsActive)
-               .OrderByDescending(o => o.BuyerMaster.BuyerMasterId)
+               .OrderByDescending(o => o.OrderId)
                .Take(5)
                .ToListAsync();
+            foreach (var order in orders)
+            {
+                if (!string.IsNullOrEmpty(order.Remarks))
+                {
+                    var remarkIds = order.Remarks.Split(',')
+                        .Select(id => int.TryParse(id, out var parsedId) ? parsedId : (int?)null)
+                        .Where(id => id.HasValue)
+                        .Select(id => id.Value)
+                        .ToList();
+                    if (remarkIds.Any())
+                    {
+                        var remarkNames = await _context.IPO_OrderRemark
+                       .Where(r => remarkIds.Contains(r.RemarkId) && r.CompanyId == companyId && r.IsActive)
+                       .Select(r => r.Remark)
+                       .ToListAsync();
+
+                        order.Remarks = string.Join(", ", remarkNames);
+                    }
+                       
+                }
+                else
+                {
+                    order.Remarks = "-";
+                }
+            }
+            return orders;
         }
         public async Task<PagedResult<IPO_BuyerOrder>> GetOrderPagedListAsync(OrderDetailPagedRequest request, int companyId,int ipoId)
         {
@@ -300,7 +327,33 @@ namespace IPOClient.Repositories.Implementations
                          .Take(request.PageSize);
 
             var items = await query.ToListAsync();
+            foreach (var order in items)
+            {
+                string remark = order.IPOOrder.Remarks??"";
+                if (!string.IsNullOrEmpty(remark))
+                {
+                    var remarkIds = remark.Split(',')
+                        .Select(id => int.TryParse(id, out var parsedId) ? parsedId : (int?)null)
+                        .Where(id => id.HasValue)
+                        .Select(id => id.Value)
+                        .ToList();
+                    if (remarkIds.Any())
+                    {
+                        var remarkNames = await _context.IPO_OrderRemark
+                      .Where(r => remarkIds.Contains(r.RemarkId) && r.CompanyId == companyId && r.IsActive)
+                      .Select(r => r.Remark)
+                      .ToListAsync();
 
+                        order.IPOOrder.Remarks = string.Join(", ", remarkNames);
+                    }
+                    
+                  
+                }
+                else
+                {
+                    order.IPOOrder.Remarks = "-";
+                }
+            }
             return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
         }
 
