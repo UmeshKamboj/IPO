@@ -81,7 +81,7 @@ namespace IPOClient.Repositories.Implementations
         {
             return await _context.BuyerPlaceOrderMasters
                 .Include(m => m.Orders)
-                .FirstOrDefaultAsync(m => m.BuyerMasterId == id && m.IsActive && m.CompanyId == companyId);
+                .FirstOrDefaultAsync(m => m.BuyerMasterId == id && m.IsActive && m.CompanyId == companyId && !m.IsDeleted);
         }
 
        
@@ -94,7 +94,7 @@ namespace IPOClient.Repositories.Implementations
                   .ThenInclude(c => c.Group)
               .Where(o => o.BuyerMaster.IPOId == ipoId
                 && o.BuyerMaster.CompanyId == companyId
-                && o.BuyerMaster.IsActive)
+                && o.BuyerMaster.IsActive && !o.BuyerMaster.IsDeleted && !o.IsDeleted)
                .OrderByDescending(o => o.OrderId)
                .Take(5)
                .ToListAsync();
@@ -137,7 +137,7 @@ namespace IPOClient.Repositories.Implementations
             query = query.Where(o =>
                 o.BuyerMaster.IsActive &&
                 o.BuyerMaster.CompanyId == companyId &&
-                o.BuyerMaster.IPOId == ipoId);
+                o.BuyerMaster.IPOId == ipoId && !o.BuyerMaster.IsDeleted && !o.IsDeleted);
 
             // Apply global search if provided
             if (!string.IsNullOrWhiteSpace(request.SearchValue))
@@ -208,7 +208,7 @@ namespace IPOClient.Repositories.Implementations
             query = query.Where(o =>
                 o.BuyerMaster.IsActive &&
                 o.BuyerMaster.CompanyId == companyId &&
-                o.BuyerMaster.IPOId == ipoId);
+                o.BuyerMaster.IPOId == ipoId && !o.BuyerMaster.IsDeleted && !o.IsDeleted);
 
             // Apply group filter through child table (no pagination, no global search)
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
@@ -231,7 +231,7 @@ namespace IPOClient.Repositories.Implementations
             query = query.Where(c =>
                 c.IPOOrder.BuyerMaster.IsActive &&
                 c.IPOOrder.BuyerMaster.CompanyId == companyId && c.IPOOrder.OrderType== orderType &&
-                c.IPOOrder.BuyerMaster.IPOId == ipoId && new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) && new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
+                c.IPOOrder.BuyerMaster.IPOId == ipoId &&!c.IsDeleted &&!c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted && new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) && new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
             );
             if (!string.IsNullOrWhiteSpace(request.SearchValue))
             {
@@ -291,7 +291,7 @@ namespace IPOClient.Repositories.Implementations
                 c.IPOOrder.BuyerMaster.IsActive &&
                 c.IPOOrder.BuyerMaster.CompanyId == companyId &&
                 c.IPOOrder.OrderType == orderType &&
-                c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                c.IPOOrder.BuyerMaster.IPOId == ipoId && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted &&
                 new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) &&
                 new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
             );
@@ -403,7 +403,7 @@ namespace IPOClient.Repositories.Implementations
                 .Where(o =>
                     o.BuyerMaster.CompanyId == companyId &&
                     o.BuyerMaster.IPOId == request.IPOId &&
-                    o.BuyerMaster.IsActive)
+                    o.BuyerMaster.IsActive&&!o.BuyerMaster.IsDeleted&&!o.IsDeleted)
                 .AsQueryable();
 
             // Filter by GroupId through child table
@@ -544,7 +544,7 @@ namespace IPOClient.Repositories.Implementations
                  .Where(o =>
                   o.OrderId == orderId &&
                   o.BuyerMaster.CompanyId == companyId &&
-                  o.BuyerMaster.IsActive
+                  o.BuyerMaster.IsActive&& !o.BuyerMaster.IsDeleted && !o.IsDeleted
                   ).FirstOrDefaultAsync();
         }
 
@@ -556,7 +556,7 @@ namespace IPOClient.Repositories.Implementations
                 .Include(c => c.Group)
                 .Where(c => c.CompanyId == companyId &&
                            c.IPOOrder.BuyerMaster.IPOId == ipoId &&
-                           c.IPOOrder.BuyerMaster.IsActive);
+                           c.IPOOrder.BuyerMaster.IsActive && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted);
 
             // Global search across multiple fields
             if (!string.IsNullOrWhiteSpace(request.SearchValue))
@@ -586,6 +586,426 @@ namespace IPOClient.Repositories.Implementations
                 .ToListAsync();
 
             return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
+        }
+        public async Task<int> UpdateOrderAsync(EditIPOOrderRequest request, int userId)
+        {
+            var order = await _context.BuyerOrders
+             .Include(o => o.OrderChild)
+             .FirstOrDefaultAsync(o => o.OrderId == request.OrderId);
+
+            if (order == null)
+                return 0; //not found
+
+            // ============================
+            // 1️ UPDATE ORDER TABLE
+            // ============================
+            order.OrderType = request.OrderType;
+            order.OrderCategory = request.OrderCategory;
+            order.InvestorType = request.InvestorType;
+            order.Rate = request.Rate;
+            order.ModifiedBy = userId.ToString();
+            order.ModifiedDate = DateTime.UtcNow;
+            order.DateTime = request.DateTime;
+            order.Remarks = request.RemarksIds;
+            string? premiumStrikePrice = request.PremiumStrikePrice;
+            if (request.OrderCategory != 4 && request.OrderCategory != 5)
+            {
+                premiumStrikePrice = request.ApplicateRate ? "Premium" : "Application";
+            }
+            order.PremiumStrikePrice = premiumStrikePrice;
+
+            // ============================
+            // 2 HANDLE QTY CHANGE
+            // ============================
+            int existingQty = order.OrderChild.Count;
+            int newQty = request.Quantity;
+
+            // ---------- QTY INCREASE ----------
+            if (newQty > existingQty)
+            {
+                int addCount = newQty - existingQty;
+
+                for (int i = 0; i < addCount; i++)
+                {
+                    order.OrderChild.Add(new IPO_PlaceOrderChild
+                    {
+                        Quantity = 1,
+                        GroupId = request.GroupId,
+                        CreatedBy = userId,
+                        CompanyId = order.CompanyId,
+                        ChildOrderCreatedDate = DateTime.UtcNow
+                    });
+                }
+            }
+
+            // ---------- QTY DECREASE ----------
+            if (newQty < existingQty)
+            {
+                int removeCount = existingQty - newQty;
+
+                // Only PAN NULL records allowed to delete
+                var deletableChildren = order.OrderChild
+                    .Where(c => string.IsNullOrEmpty(c.PANNumber))
+                    .OrderByDescending(c => c.POChildId)
+                    .Take(removeCount)
+                    .ToList();
+
+                if (deletableChildren.Count < removeCount)
+                {
+                    // PAN filled children exist → not allowed
+                    //throw new Exception("Cannot reduce quantity because PAN already exists");
+                    return -1; // indicate PAN exists
+                }
+
+                _context.ChildPlaceOrder.RemoveRange(deletableChildren);
+            }
+            // ============================
+            // 3️ UPDATE CHILD DATA
+            // ============================
+            foreach (var child in order.OrderChild)
+            {
+                child.GroupId = request.GroupId;
+                child.ModifiedBy = userId.ToString();
+                child.ModifiedDate = DateTime.UtcNow;
+            }
+            await _context.SaveChangesAsync();
+            return order.OrderId;
+        }
+
+        public async Task<bool> DeleteOrderAsync(int orderId, int userId)
+        {
+            var order = await _context.BuyerOrders
+              .Include(o => o.OrderChild)
+              .Include(o => o.BuyerMaster)
+             .ThenInclude(m => m.Orders)
+             .FirstOrDefaultAsync(o => o.OrderId == orderId &&!o.IsDeleted);
+            if (order == null)
+                return false;
+
+            // ============================
+            // 1️ SOFT DELETE CHILD
+            // ============================
+            foreach (var child in order.OrderChild)
+            {
+                child.IsDeleted = true;
+                child.ModifiedBy = userId.ToString();
+                child.ModifiedDate = DateTime.UtcNow;
+            }
+
+            // ============================
+            // 2️ SOFT DELETE ORDER
+            // ============================
+            order.IsDeleted = true;
+            order.ModifiedBy = userId.ToString();
+            order.ModifiedDate = DateTime.UtcNow;
+
+            // ============================
+            // 3️ CHECK MASTER STATUS
+            // ============================
+            bool anyActiveOrder = order.BuyerMaster.Orders
+                .Any(o => !o.IsDeleted && o.OrderId != orderId);
+
+            if (!anyActiveOrder)
+            {
+                order.BuyerMaster.IsActive = false;
+                order.BuyerMaster.ModifiedBy = userId.ToString();
+                order.BuyerMaster.ModifiedDate = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        private async Task<int> ResolveGroupIdAsync(string groupName, int companyId, int ipoId, Dictionary<string, int> cache)
+        {
+            if (cache.TryGetValue(groupName, out int cachedId))
+                return cachedId;
+
+            var group = await _context.IPO_GroupMaster
+                .FirstOrDefaultAsync(x =>
+                    x.GroupName == groupName &&
+                    x.CompanyId == companyId);
+
+            if (group == null)
+            {
+                group = new IPO_GroupMaster
+                {
+                    GroupName = groupName,
+                    CompanyId = companyId,
+                    CreatedDate = DateTime.UtcNow,
+                    IsActive = true
+                };
+
+                _context.IPO_GroupMaster.Add(group);
+                await _context.SaveChangesAsync();
+            }
+
+            cache[groupName] = group.IPOGroupId;
+            return group.IPOGroupId;
+        }
+        private async Task<string> ResolveRemarkIdsAsync(string? remarks,int companyId, int userId,int ipoId, Dictionary<string, int> cache)
+        {
+            if (string.IsNullOrWhiteSpace(remarks))
+                return string.Empty;
+
+            var remarkNames = remarks
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var remarkIds = new List<int>();
+
+            foreach (var name in remarkNames)
+            {
+                if (!cache.TryGetValue(name, out int remarkId))
+                {
+                    var remark = await _context.IPO_OrderRemark
+                        .FirstOrDefaultAsync(x =>
+                            x.Remark == name &&
+                            x.CompanyId == companyId && x.IsActive);
+
+                    if (remark == null)
+                    {
+                        remark = new IPO_Order_Remark
+                        {
+                            Remark = name,
+                            CompanyId = companyId,
+                            CreatedBy = userId,
+                            CreatedDate = DateTime.UtcNow,
+                            IsActive = true,
+                            IPOId=ipoId
+                        };
+
+                        _context.IPO_OrderRemark.Add(remark);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    cache[name] = remark.RemarkId;
+                    remarkId = remark.RemarkId;
+                }
+
+                remarkIds.Add(remarkId);
+            }
+
+            return string.Join(",", remarkIds);
+        }
+        public async Task<bool> BulkOrderUploadAsync(int ipoId, List<string[]> rows, int createdByUserId, int companyId)
+        {
+            // =========================
+            // 1️ CREATE MASTER (ONCE)
+            // =========================
+            var master = new IPO_BuyerPlaceOrderMaster
+            {
+                IPOId = ipoId,
+                CompanyId = companyId,
+                CreatedBy = createdByUserId,
+                CreatedDate = DateTime.UtcNow,
+                IsActive = true,
+                Orders = new List<IPO_BuyerOrder>()
+            };
+            // Cache GroupId lookups
+            var groupCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var remarkCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            if( rows == null || rows.Count == 0)
+                return false;
+            foreach (var col in rows)
+            {
+                /*
+                 CSV Columns
+                 0 GroupName
+                 1 OrderType
+                 2 OrderCategory
+                 3 InvestorType
+                 4 Quantity
+                 5 Rate
+                 6 StrikePrice / Premium / Application
+                 7 OrderDate
+                 8 OrderTime
+                 9 Remark
+                */
+
+                // =========================
+                // 2️ GROUP RESOLVE (CACHED)
+                // =========================
+                int groupId = await ResolveGroupIdAsync(  col[0], companyId, ipoId,groupCache);
+                // =========================
+                // 3️ ENUM PARSING
+                // =========================
+                int orderType = (int)Enum.Parse<IPOOrderType>(col[1], true);
+                int orderCategory = (int)Enum.Parse<IPOOrderCategory>(col[2], true);
+                int investorType = (int)Enum.Parse<IPOInvestorType>(col[3], true);
+
+                int quantity = int.Parse(col[4]);
+                decimal rate = decimal.Parse(col[5]);
+
+                // =========================
+                // 4️ PREMIUM / STRIKE LOGIC
+                // =========================
+                bool applicateRate = false;
+                string? strikePrice = null;
+
+                if (!string.IsNullOrWhiteSpace(col[6]))
+                {
+                    //if (col[6].Equals("Premium", StringComparison.OrdinalIgnoreCase))
+                    //    applicateRate = true;
+                    //else if (col[6].Equals("Application", StringComparison.OrdinalIgnoreCase))
+                    //    applicateRate = false;
+                    //else
+                    strikePrice = col[6];
+                }
+
+                // =========================
+                // 5️ DATETIME
+                // =========================
+                var date = DateTime.Parse(col[7]);
+                var time = TimeSpan.Parse(col[8]);
+                var orderDateTime = date.Date.Add(time);
+                string remarkIds = await ResolveRemarkIdsAsync( col[9], companyId,createdByUserId, ipoId,remarkCache);
+                // =========================
+                // 6️ CREATE ORDER
+                // =========================
+                var order = new IPO_BuyerOrder
+                {
+                    OrderType = orderType,
+                    OrderCategory = orderCategory,
+                    InvestorType = investorType,
+                    Quantity = quantity,
+                    Rate = rate,
+                    PremiumStrikePrice = strikePrice,
+                    ApplicateRate = applicateRate,
+                    DateTime = orderDateTime,
+                    Remarks = remarkIds,
+                    CreatedBy = createdByUserId,
+                    CompanyId = companyId,
+                    OrderCreatedDate = DateTime.UtcNow,
+                    OrderChild = new List<IPO_PlaceOrderChild>()
+                };
+
+                // =========================
+                // 7️ CHILD ROWS
+                // =========================
+                for (int i = 0; i < quantity; i++)
+                {
+                    order.OrderChild.Add(new IPO_PlaceOrderChild
+                    {
+                        GroupId = groupId,
+                        Quantity = 1,
+                        CreatedBy = createdByUserId,
+                        CompanyId = companyId,
+                        ChildOrderCreatedDate = DateTime.UtcNow
+                    });
+                }
+
+                master.Orders.Add(order);
+            }
+            // =========================
+            // 8️ Save
+            // =========================
+            await _dbSet.AddAsync(master);
+            //_context.BuyerPlaceOrderMasters.Add(master);
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+
+        public async Task<bool> DeletedAllOrderAsync(int ipoId, int userId, int companyId)
+        {
+            using var tx = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var masters = await _context.BuyerPlaceOrderMasters
+               .Include(m => m.Orders)
+                   .ThenInclude(o => o.OrderChild)
+               .Where(x =>  x.CompanyId == companyId && x.IPOId == ipoId &&!x.IsDeleted).ToListAsync();
+
+                if (!masters.Any())
+                    return false;
+
+                // =========================
+                // 1️ CREATE DELETE SUMMARY
+                // =========================
+                var totalOrders = masters .SelectMany(m => m.Orders) .Count(o => !o.IsDeleted);
+                var deleteHistory = new IPO_DeleteOrderHistory
+                {
+                    CompanyId = companyId,
+                    DeletedBy = userId,
+                    TotalOrdersDeleted = totalOrders
+                };
+                _context.IPO_DeleteOrderHistory.Add(deleteHistory);
+                await _context.SaveChangesAsync(); // HistoryId generated
+
+                // =========================
+                // 2️ BACKUP EVERYTHING
+                // =========================
+                foreach (var master in masters)
+                {
+                    _context.Add(new OrderMaster_DeletedHistory
+                    {
+                        BuyerMasterId = master.BuyerMasterId,
+                        IPOId = master.IPOId,
+                        DeleteHistoryId = deleteHistory.HistoryId,
+                        CreatedBy = master.CreatedBy,
+                        CompanyId = master.CompanyId,
+                        CreatedDate = master.CreatedDate,
+                        DeletedBy = userId
+                    });
+
+                    foreach (var order in master.Orders)
+                    {
+                        _context.Add(new Order_DeletedHistory
+                        {
+                            OrderId = order.OrderId,
+                            BuyerMasterId = order.BuyerMasterId,
+                            DeleteHistoryId = deleteHistory.HistoryId,
+                            OrderType = order.OrderType,
+                            OrderCategory = order.OrderCategory,
+                            InvestorType = order.InvestorType,
+                            Quantity = order.Quantity,
+                            Rate = order.Rate,
+                            DateTime = order.DateTime,
+                            Remarks = order.Remarks,
+                            DeletedBy = userId
+                        });
+
+                        foreach (var child in order.OrderChild)
+                        {
+                            _context.Add(new OrderChild_DeletedHistory
+                            {
+                                POChildId = child.POChildId,
+                                OrderId = child.OrderId,
+                                DeleteHistoryId = deleteHistory.HistoryId,
+                                GroupId = child.GroupId,
+                                PANNumber = child.PANNumber,
+                                ClientName = child.ClientName,
+                                DematNumber = child.DematNumber,
+                                ApplicationNo = child.ApplicationNo,
+                                AllotedQty = child.AllotedQty,
+                                DeletedBy = userId,
+                                Quantity = 1
+                            });
+
+                            child.IsDeleted = true;
+                        }
+
+                        order.IsDeleted = true;
+                    }
+
+                    master.IsDeleted = true;
+                }
+
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                return true;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
     }
 }

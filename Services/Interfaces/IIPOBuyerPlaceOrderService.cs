@@ -13,8 +13,12 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData<BuyerOrderResponse>> GetPlaceOrderDataByIdAsync(int orderId, int companyId);
         Task<ReturnData<List<BuyerOrderResponse>>> GetOrderListAsync(OrderListRequest request, int companyId, int ipoId);
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId,int orderType);
-        Task<ReturnData> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int modifiedByUserId);
+        Task<ReturnData> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int modifiedByUserId); //order child's update
         Task<ReturnData<OrderStatusSummaryResponse>> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId);
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetAllOrderChildrenWithSearchAsync(OrderDetailPagedRequest request, int companyId, int ipoId);
+        Task<ReturnData> UpdateOrderAsync(EditIPOOrderRequest request, int modifiedByUserId); //update order
+        Task<ReturnData> DeleteOrderAsync(int orderId, int userId); //Soft delete Order
+        Task<ReturnData> DeleteAllOrderAsync(int ipoId, int userId, int companyId); //Soft delete all Order and backup
+        Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId);//Bulk Order Upload
     }
 }
