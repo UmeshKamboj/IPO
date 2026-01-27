@@ -1,4 +1,5 @@
-﻿using IPOClient.Models.Entities;
+﻿using Azure.Core;
+using IPOClient.Models.Entities;
 using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Requests.IPOMaster.Response;
@@ -151,6 +152,22 @@ namespace IPOClient.Services.Implementations
                 Remark = ipo.Remark, 
                 IsActive = ipo.IsActive, 
             };
+        }
+
+        public async Task<ReturnData> UpdateIPOOpenPriceAsync(int ipoId, decimal openPrice, int userId)
+        {
+            try
+            {
+                var success = await _ipoRepository.UpdateIPOOpenPriceAsync(ipoId, openPrice, userId);
+                if (!success)
+                    return ReturnData.ErrorResponse("IPO not found or inactive", 404);
+
+                return ReturnData.SuccessResponse("IPO open price updated successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error updating IPO: {ex.Message}", 500);
+            }
         }
     }
 

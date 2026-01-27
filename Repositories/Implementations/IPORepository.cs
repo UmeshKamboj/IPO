@@ -1,4 +1,5 @@
-﻿using IPOClient.Data;
+﻿using Azure.Core;
+using IPOClient.Data;
 using IPOClient.Models.Entities;
 using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Requests.IPOMaster.Response;
@@ -139,6 +140,18 @@ namespace IPOClient.Repositories.Implementations
             return list;
         }
 
+        public async Task<bool> UpdateIPOOpenPriceAsync(int ipoId, decimal openPrice, int userId)
+        {
+            var ipo = await _dbSet.FindAsync(ipoId);
+            if (ipo == null || !ipo.IsActive)
+                return false;
+            ipo.OpenIPOPrice = openPrice;
+            ipo.ModifiedBy = userId.ToString();
+            ipo.ModifiedDate = DateTime.UtcNow;
+            _dbSet.Update(ipo);
+            await _context.SaveChangesAsync();
+            return true;
+        }
     }
 
 }

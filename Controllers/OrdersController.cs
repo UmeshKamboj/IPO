@@ -218,6 +218,56 @@ namespace IPOClient.Controllers
             var result = await _ipoBuyerPlaceOrderService.BulkOrderUploadAsync(ipoId,file, userId,companyId);
             return StatusCode(result.ResponseCode ?? 500, result);
         }
+        /// <summary>
+        /// Download Single File Order
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("download/single")]
+        public async Task<IActionResult> DownloadSingleFile(int ipoId,string filter)
+        {
+            var companyId = GetCompanyId();
+            if (!Enum.TryParse<DownloadFilterType>(filter, true, out var filterType))
+            {
+                return BadRequest("Invalid filter. Allowed values: all, pendingpan");
+            }
+            var result = await _ipoBuyerPlaceOrderService.DownloadSingleFileAsync(ipoId, companyId, filterType);
+            if (!result.Success || result.Data == null)
+                return BadRequest(result);
+            return File(result.Data.Bytes, result.Data.ContentType,result.Data.FileName);
+        }
+        /// <summary>
+        /// Download GroupWise File Order
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("download/groupwise")]
+        public async Task<IActionResult> DownloadGroupWiseFile(int ipoId, string filter)
+        {
+            var companyId = GetCompanyId();
+            if (!Enum.TryParse<DownloadFilterType>(filter, true, out var filterType))
+            {
+                return BadRequest("Invalid filter. Allowed values: all, pendingpan");
+            }
+            var result = await _ipoBuyerPlaceOrderService.DownloadGroupWiseFileAsync(ipoId, companyId, filterType);
+            if (!result.Success || result.Data == null)
+                return BadRequest(result);
+            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        }
+
+        /// <summary>
+        /// Get Client wise billing list with pagination and global search
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="ipoId"></param>
+        /// <returns></returns>
+        [HttpPost("{ipoId}/clientwisebilling")]
+        public async Task<IActionResult> GetClientWiseBillingList([FromBody] OrderDetailFilterRequest request, int ipoId)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.GetClientWiseBillingPagedListAsync(request, companyId, ipoId);
+
+            var statusCode = result.ResponseCode == 200 ? 200 : 400;
+            return StatusCode(statusCode, result);
+        }
         // Helpers to get claims
         private int GetCurrentUserId()
         {
