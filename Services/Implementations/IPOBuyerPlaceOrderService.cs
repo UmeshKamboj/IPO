@@ -6,6 +6,7 @@ using IPOClient.Models.Responses;
 using IPOClient.Repositories.Implementations;
 using IPOClient.Repositories.Interfaces;
 using IPOClient.Services.Interfaces;
+using Microsoft.VisualBasic.FileIO;
 
 namespace IPOClient.Services.Implementations
 {
@@ -73,7 +74,8 @@ namespace IPOClient.Services.Implementations
                         PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
                         Quantity = order.Quantity,
                         Rate = order.Rate,
-                        DateTime = order.DateTime
+                        DateTime = order.DateTime,
+                        Remark=order.Remarks
                     });
                 }
 
@@ -111,7 +113,8 @@ namespace IPOClient.Services.Implementations
                     DateTime = order.DateTime,
                     OrderCategory=order.OrderCategory,
                     OrderType=order.OrderType,
-                    InvestorType=order.InvestorType,
+                    InvestorType=order.InvestorType, 
+                    Remark=order.Remarks,
                     GroupId=firstChild?.GroupId ?? 0
                 };
 
@@ -191,7 +194,103 @@ namespace IPOClient.Services.Implementations
             }
 
         }
+        public async Task<ReturnData> UpdateOrderAsync(EditIPOOrderRequest request, int modifiedByUserId)
+        {
+            try
+            {
+                var orderId = await _buyerPlaceOrderRepository.UpdateOrderAsync(request, modifiedByUserId);
+                if (orderId == 0)
+                {
+                    return ReturnData.ErrorResponse("Order details not found or inactive", 404);
+                }
+                else if (orderId == -1)
+                {
+                    return ReturnData.ErrorResponse("Cannot reduce quantity because PAN already exists", 404);
+                }
+                else
+                {
+                    return ReturnData.SuccessResponse("Order updated successfully", 200);
+                }
 
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error updating order: {ex.Message}", 500);
+            }
+        }
+        public async Task<ReturnData> DeleteOrderAsync(int orderId, int userId)
+        {
+            try
+            {
+                var success = await _buyerPlaceOrderRepository.DeleteOrderAsync(orderId, userId);
+                if (!success)
+                {
+                    return ReturnData.ErrorResponse("Order not found", 404);
+                }
+                return ReturnData.SuccessResponse("Order deleted successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error deleting order: {ex.Message}", 500);
+            }
+        }
+
+        public async Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId)
+        {
+            try
+            {
+                var rows = new List<string[]>();
+                using var stream = file.OpenReadStream();
+                using var parser = new TextFieldParser(stream);
+
+                parser.TextFieldType = FieldType.Delimited;
+                parser.SetDelimiters(",");
+                parser.HasFieldsEnclosedInQuotes = true;
+
+                // 🔹 Skip header
+                if (!parser.EndOfData)
+                    parser.ReadLine();
+
+                while (!parser.EndOfData)
+                {
+                    var fields = parser.ReadFields();
+                    if (fields == null || fields.Length == 0)
+                        continue;
+
+                    rows.Add(fields); 
+                }
+
+                if (!rows.Any())
+                    return ReturnData.ErrorResponse("CSV file is empty", 400);
+
+                var success = await _buyerPlaceOrderRepository.BulkOrderUploadAsync(ipoId, rows, createdByUserId, companyId);
+                return success
+                    ? ReturnData.SuccessResponse("Bulk order uploaded successfully", 201)
+                    : ReturnData.ErrorResponse("Bulk order upload failed", 500);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error uploading bulk order: {ex.Message}", 500);
+            }
+            
+
+        }
+        public async Task<ReturnData> DeleteAllOrderAsync(int ipoId, int userId, int companyId)
+        {
+            try
+            {
+                var success = await _buyerPlaceOrderRepository.DeletedAllOrderAsync(ipoId, userId, companyId);
+                if (!success)
+                {
+                    return ReturnData.ErrorResponse("Order not found", 404);
+                }
+                return ReturnData.SuccessResponse("Order deleted successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error deleting order: {ex.Message}", 500);
+            }
+        }
         // MAP ENTITY TO RESPONSE DTO
         private BuyerPlaceOrderResponse MapToIPOResponse(IPO_BuyerPlaceOrderMaster buyer)
         {
@@ -245,7 +344,8 @@ namespace IPOClient.Services.Implementations
                 ClientName = child.ClientName ?? "",
                 AllotedQty = child.AllotedQty ?? 0,
                 DematNumber = child.DematNumber ?? "",
-                ApplicationNumber = child.ApplicationNo ?? ""
+                ApplicationNumber = child.ApplicationNo ?? "",
+                Remark= order.Remarks
             };
 
         }
@@ -310,6 +410,6 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-
+      
     }
 }

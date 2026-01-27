@@ -1,5 +1,6 @@
 using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
+using IPOClient.Services.Implementations;
 using IPOClient.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -130,7 +131,20 @@ namespace IPOClient.Controllers
 
             return Ok(result);
         }
+        /// <summary>
+        /// Update Order
+        /// </summary>
+        [HttpPut("update/order")]
+        public async Task<IActionResult> UpdateOrder([FromBody] EditIPOOrderRequest request)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _ipoBuyerPlaceOrderService.UpdateOrderAsync(request, userId);
 
+            if (!result.Success)
+                return StatusCode(result.ResponseCode ?? 400, result);
+
+            return Ok(result);
+        }
         /// <summary>
         /// Order status popup summary
         /// </summary>
@@ -164,7 +178,46 @@ namespace IPOClient.Controllers
 
             return Ok(result);
         }
+        /// <summary>
+        /// Delete a order (soft delete) 
+        /// </summary>
+        [HttpDelete("deleteorder")]
+        public async Task<IActionResult> DeleteOrder(int orderId)
+        {
+            var companyId = GetCompanyId();
 
+            var result = await _ipoBuyerPlaceOrderService.DeleteOrderAsync(orderId, companyId);
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+
+        /// <summary>
+        /// Delete all order (soft delete) 
+        /// </summary>
+        [HttpDelete("deleteallorder")]
+        public async Task<IActionResult> DeleteAllOrder(int ipoId)
+        {
+            var companyId = GetCompanyId();
+            int userId = GetCurrentUserId();
+            var result = await _ipoBuyerPlaceOrderService.DeleteAllOrderAsync(ipoId,userId, companyId);
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+
+        /// <summary>
+        /// Upload IPO bulk orders via CSV
+        /// </summary>
+        [HttpPost("uploadbulk")]
+        public async Task<IActionResult> BulkOrderUploadCsv([FromForm]  int ipoId,IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("CSV file is required");
+
+            if (!file.FileName.EndsWith(".csv"))
+                return BadRequest("Only CSV files are allowed");
+            int companyId = GetCompanyId();  
+            int userId = GetCurrentUserId();
+            var result = await _ipoBuyerPlaceOrderService.BulkOrderUploadAsync(ipoId,file, userId,companyId);
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
         // Helpers to get claims
         private int GetCurrentUserId()
         {
