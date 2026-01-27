@@ -91,7 +91,7 @@ namespace IPOClient.Repositories.Implementations
                 query = query.Where(c => !c.IsDeleted);
 
             // Filter by GroupId
-            if (request.GroupId.HasValue)
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(c => c.GroupId == request.GroupId.Value);
 
             // Global search

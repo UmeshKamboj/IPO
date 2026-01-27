@@ -34,9 +34,9 @@ namespace IPOClient.Repositories.Implementations
             return group.IPOGroupId;
         }
 
-        public async Task<bool> UpdateAsync(UpdateGroupRequest request, int userId)
+        public async Task<bool> UpdateAsync(int id, UpdateGroupRequest request, int userId)
         {
-            var group = await _dbSet.FindAsync(request.IPOGroupId);
+            var group = await _dbSet.FindAsync(id);
             if (group == null || !group.IsActive)
                 return false;
 
@@ -84,7 +84,7 @@ namespace IPOClient.Repositories.Implementations
             query = query.Where(x => x.IsActive && x.CompanyId == companyId);
 
             // Filter by IPO if provided
-            if (request.IPOId.HasValue)
+            if (request.IPOId.HasValue && request.IPOId.Value > 0)
             {
                 query = query.Where(x => x.IPOId == request.IPOId.Value);
             }

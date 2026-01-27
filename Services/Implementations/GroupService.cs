@@ -34,16 +34,19 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-        public async Task<ReturnData<GroupResponse>> UpdateGroupAsync(UpdateGroupRequest request, int userId)
+        public async Task<ReturnData<GroupResponse>> UpdateGroupAsync(int id, UpdateGroupRequest request, int userId, int companyId)
         {
             try
             {
-                var success = await _groupRepository.UpdateAsync(request, userId);
+                var success = await _groupRepository.UpdateAsync(id, request, userId);
                 if (!success)
                     return ReturnData<GroupResponse>.ErrorResponse("Group not found or inactive", 404);
 
-                var group = await _groupRepository.GetByIdAsync(request.IPOGroupId, 0); // Company validation done in controller
-                var response = MapToResponse(group!);
+                var group = await _groupRepository.GetByIdAsync(id, companyId);
+                if (group == null)
+                    return ReturnData<GroupResponse>.ErrorResponse("Group updated but could not be retrieved", 500);
+
+                var response = MapToResponse(group);
                 return ReturnData<GroupResponse>.SuccessResponse(response, "Group updated successfully", 200);
             }
             catch (Exception ex)
