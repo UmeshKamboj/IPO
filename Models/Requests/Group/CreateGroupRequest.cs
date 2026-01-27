@@ -21,8 +21,7 @@ namespace IPOClient.Models.Requests.Group
 
     public class UpdateGroupRequest : CreateGroupRequest
     {
-        [Required(ErrorMessage = "Group ID is required")]
-        public int IPOGroupId { get; set; }
+       
     }
 
     public class GroupFilterRequest : PaginationRequest

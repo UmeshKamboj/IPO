@@ -29,12 +29,12 @@ namespace IPOClient.Repositories.Implementations
             return group.IPOGroupId;
         }
 
-        public async Task<bool> UpdateAsync(CreateIPOGroupRequest request, int userId)
+        public async Task<bool> UpdateAsync(int id, CreateIPOGroupRequest request, int userId)
         {
             if (!request.Id.HasValue)
                 return false;
 
-            var group = await _dbSet.FindAsync(request.Id.Value);
+            var group = await _dbSet.FindAsync(id);
             if (group == null || !group.IsActive)
                 return false;
 
@@ -71,7 +71,7 @@ namespace IPOClient.Repositories.Implementations
         {
             var list = await _dbSet
                 .AsNoTracking()
-                .Where(x => x.IsActive && x.CompanyId == companyId && (!ipoId.HasValue || x.IPOId == ipoId.Value))
+                .Where(x => x.IsActive && x.CompanyId == companyId && (!ipoId.HasValue || ipoId.Value <= 0 || x.IPOId == ipoId.Value))
                 .OrderByDescending(x => x.CreatedDate)
                 .ToListAsync();
 

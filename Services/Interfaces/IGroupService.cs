@@ -6,7 +6,7 @@ namespace IPOClient.Services.Interfaces
     public interface IGroupService
     {
         Task<ReturnData<GroupResponse>> CreateGroupAsync(CreateGroupRequest request, int userId, int companyId);
-        Task<ReturnData<GroupResponse>> UpdateGroupAsync(UpdateGroupRequest request, int userId);
+        Task<ReturnData<GroupResponse>> UpdateGroupAsync(int id, UpdateGroupRequest request, int userId, int companyId);
         Task<ReturnData> DeleteGroupAsync(int id, int userId, int companyId);
         Task<ReturnData<GroupResponse>> GetGroupByIdAsync(int id, int companyId);
         Task<ReturnData<PagedResult<GroupResponse>>> GetGroupsAsync(GroupFilterRequest request, int companyId);

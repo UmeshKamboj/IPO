@@ -52,14 +52,12 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Update an existing group with advanced properties
         /// </summary>
-        [HttpPut("update")]
+        [HttpPut("update/{id}")]
         public async Task<IActionResult> UpdateAdvancedGroup(int id, [FromBody] UpdateGroupRequest request)
         {
-            if (id != request.IPOGroupId)
-                return BadRequest(new { message = "ID mismatch" });
-
             var userId = GetUserId();
-            var result = await _groupService.UpdateGroupAsync(request, userId);
+            var companyId = GetCompanyId();
+            var result = await _groupService.UpdateGroupAsync(id, request, userId, companyId);
             return StatusCode(result.ResponseCode ?? 500, result);
         }
 

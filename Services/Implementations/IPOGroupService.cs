@@ -21,7 +21,7 @@ namespace IPOClient.Services.Implementations
             try
             {
                 request.Id = id;
-                var success = await _groupRepository.UpdateAsync(request, modifiedByUserId);
+                var success = await _groupRepository.UpdateAsync(id,request, modifiedByUserId);
                 if (!success)
                     return ReturnData.ErrorResponse("Group not found or inactive", 404);
 
