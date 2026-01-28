@@ -1,5 +1,6 @@
 using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
+using IPOClient.Models.Responses;
 using IPOClient.Services.Implementations;
 using IPOClient.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -199,7 +200,9 @@ namespace IPOClient.Controllers
             var companyId = GetCompanyId();
             int userId = GetCurrentUserId();
             var result = await _ipoBuyerPlaceOrderService.DeleteAllOrderAsync(ipoId,userId, companyId);
-            return StatusCode(result.ResponseCode ?? 500, result);
+            if (!result.Success)
+                return StatusCode(result.ResponseCode ?? 500, result);
+            return File(result.Data.Bytes, result.Data.ContentType,result.Data.FileName);
         }
 
         /// <summary>
@@ -284,6 +287,20 @@ namespace IPOClient.Controllers
 
             var statusCode = result.ResponseCode == 200 ? 200 : 400;
             return StatusCode(statusCode, result);
+        }
+
+        /// <summary>
+        /// Group Wise Billing List
+        /// </summary>
+        [HttpPost("{ipoId}/groupwise/billing")]
+        public async Task<IActionResult> GetGroupWiseBilling(int ipoId, [FromBody] GroupWiseBillingRequest request)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.GetGroupWiseBillingListAsync(request, companyId,ipoId);
+            if (!result.Success)
+                return StatusCode(result.ResponseCode ?? 400, result);
+
+            return Ok(result);
         }
         // Helpers to get claims
         private int GetCurrentUserId()
