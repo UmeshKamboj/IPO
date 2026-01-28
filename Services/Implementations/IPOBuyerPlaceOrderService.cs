@@ -7,6 +7,9 @@ using IPOClient.Repositories.Implementations;
 using IPOClient.Repositories.Interfaces;
 using IPOClient.Services.Interfaces;
 using Microsoft.VisualBasic.FileIO;
+using System.IO.Compression;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace IPOClient.Services.Implementations
 {
@@ -14,11 +17,13 @@ namespace IPOClient.Services.Implementations
     {
         private readonly IIPOBuyerPlaceOrderRepository _buyerPlaceOrderRepository;
         private readonly IIPOGroupRepository _groupRepository;
+        private readonly IIPORepository _ipoRepository;
 
-        public IPOBuyerPlaceOrderService(IIPOBuyerPlaceOrderRepository buyerPlaceOrderRepository, IIPOGroupRepository groupRepository)
+        public IPOBuyerPlaceOrderService(IIPOBuyerPlaceOrderRepository buyerPlaceOrderRepository, IIPOGroupRepository groupRepository, IIPORepository ipoRepository)
         {
             _buyerPlaceOrderRepository = buyerPlaceOrderRepository;
             _groupRepository = groupRepository;
+            _ipoRepository = ipoRepository;
         }
         public async Task<ReturnData<BuyerPlaceOrderResponse>> CreateIPOBuyerPlaceOrderAsync(IPOBuyerPlaceOrderRequest request, int createdByUserId, int companyId)
         {
@@ -291,6 +296,108 @@ namespace IPOClient.Services.Implementations
                 return ReturnData.ErrorResponse($"Error deleting order: {ex.Message}", 500);
             }
         }
+
+
+        public async Task<ReturnData<FileResponse>> DownloadSingleFileAsync(int ipoId, int companyId, DownloadFilterType downloadFilterType)
+        {
+            try
+            {
+                var data = await _buyerPlaceOrderRepository.GetOrdersAsync(ipoId, companyId, downloadFilterType);
+                var sb = new StringBuilder();
+                sb.AppendLine("Group,IPO Type,Investor Type,Rate,PANNumber,ClientName,AllotedQty,DemantNumber,ApplicationNumber,OrderDate,OrderTime,Remark");
+                foreach (var x in data)
+                {
+                    var group = await _groupRepository.GetByIdAsync(x.GroupId, companyId);
+                    var orderDate = x.IPOOrder.DateTime.ToString("dd-MM-yyyy");
+                    var orderTime = x.IPOOrder.DateTime.ToString("HH:mm");
+                    var remarkNames = await _buyerPlaceOrderRepository.ResolveRemarkNamesAsync(x.IPOOrder.Remarks, ipoId,companyId);
+                    sb.AppendLine(
+                        $"{group?.GroupName??"-"},{((IPOOrderCategory)x.IPOOrder.OrderCategory).ToString()},{((IPOInvestorType)x.IPOOrder.InvestorType).ToString()},{x.IPOOrder.Rate},{x.PANNumber ?? ""},{x.ClientName??""},{ x.AllotedQty },{ x.DematNumber ?? ""},{ x.ApplicationNo ?? ""},{ orderDate},{ orderTime},{ remarkNames ?? "-"}");
+               
+                }
+                var csv = Encoding.UTF8.GetBytes(sb.ToString());
+                var ipo = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var fileprefix = downloadFilterType == DownloadFilterType.All ? "-AllRecords" : "";
+                var fileResponse = new FileResponse
+                {
+                    Bytes = csv,
+                    ContentType = "text/csv",
+                    FileName = $"{ipo?.IPOName ?? ""}-OrderDetail{fileprefix}.csv"
+                };
+                return  ReturnData<FileResponse>.SuccessResponse(fileResponse, "File downloaded", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<FileResponse>.ErrorResponse($"Error downloading file: {ex.Message}", 500);
+            }   
+            
+        }
+
+        public async Task<ReturnData<FileResponse>> DownloadGroupWiseFileAsync(int ipoId, int companyId, DownloadFilterType downloadFilterType)
+        {
+            try
+            {
+                var ipo = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var data = await _buyerPlaceOrderRepository.GetOrdersAsync(ipoId, companyId, downloadFilterType);
+                using var ms = new MemoryStream();
+                using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+                {
+                    foreach (var grp in data.GroupBy(x => x.GroupId))
+                    {
+                        var group_ = await _groupRepository.GetByIdAsync(grp.Key, companyId);
+                        var entry = zip.CreateEntry($"{ipo?.IPOName ?? ""}_{group_?.GroupName ?? ""}.csv");
+                        using var sw = new StreamWriter(entry.Open());
+
+                        sw.WriteLine("Group,IPO Type,Investor Type,Rate,PANNumber,ClientName,AllotedQty,DemantNumber,ApplicationNumber,OrderDate,OrderTime,Remark");
+                        foreach (var x in grp)
+                        {
+                            var group = await _groupRepository.GetByIdAsync(x.GroupId, companyId);
+                            var orderDate = x.IPOOrder.DateTime.ToString("dd-MM-yyyy");
+                            var orderTime = x.IPOOrder.DateTime.ToString("HH:mm");
+                            var remarkNames = await _buyerPlaceOrderRepository.ResolveRemarkNamesAsync(x.IPOOrder.Remarks, ipoId, companyId);
+                            sw.WriteLine((
+                            $"{group?.GroupName ?? "-"},{((IPOOrderCategory)x.IPOOrder.OrderCategory).ToString()},{((IPOInvestorType)x.IPOOrder.InvestorType).ToString()},{x.IPOOrder.Rate},{x.PANNumber ?? ""},{x.ClientName ?? ""},{x.AllotedQty},{x.DematNumber ?? ""},{x.ApplicationNo ?? ""},{orderDate},{orderTime},{remarkNames ?? "-"}"));
+                        }
+                        sw.Flush();
+                    }
+                }
+                ms.Position = 0;
+                var dateStamp = DateTime.Now.ToString("yyyyMMddHHmm");
+                var fileResponse = new FileResponse
+                {
+                    Bytes = ms.ToArray(),
+                    ContentType = "application/zip",
+                    FileName = $"{ipo?.IPOName ?? ""}_GroupWiseOrders_{dateStamp}.zip"
+                };
+                return ReturnData<FileResponse>.SuccessResponse(fileResponse, "File downloaded", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<FileResponse>.ErrorResponse($"Error downloading file: {ex.Message}", 500);
+            }
+
+        }
+        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        {
+            try
+            {
+                var pagedResult = await _buyerPlaceOrderRepository.GetClientWisePagedListAsync(request, companyId, ipoId);
+
+                var responses = pagedResult.Items?
+                    .Select((order, index) => MapToOrderDetailResponse(
+                        order,
+                        srNo: request.Skip + index + 1
+                    ))
+                    .ToList() ?? new List<BuyerOrderResponse>();
+
+                var result = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize);
+                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Client wise billing retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
+            }
+        }
         // MAP ENTITY TO RESPONSE DTO
         private BuyerPlaceOrderResponse MapToIPOResponse(IPO_BuyerPlaceOrderMaster buyer)
         {
@@ -345,7 +452,8 @@ namespace IPOClient.Services.Implementations
                 AllotedQty = child.AllotedQty ?? 0,
                 DematNumber = child.DematNumber ?? "",
                 ApplicationNumber = child.ApplicationNo ?? "",
-                Remark= order.Remarks
+                Remark = order.Remarks,
+                PreOpenPrice = child.Group?.IPOMaster?.OpenIPOPrice ?? 0
             };
 
         }

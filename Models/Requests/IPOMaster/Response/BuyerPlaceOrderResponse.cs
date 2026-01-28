@@ -36,6 +36,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public string? DematNumber { get; set; }
         public string? ApplicationNumber { get; set; }
         public string? Remark { get; set; }
+        public decimal? PreOpenPrice { get; set; }
         public OrderCategoryOptionsResponse? OrderCategoryOptions { get; set; }
 
     }
