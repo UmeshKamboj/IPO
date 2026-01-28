@@ -120,7 +120,8 @@ namespace IPOClient.Services.Implementations
                     OrderType=order.OrderType,
                     InvestorType=order.InvestorType, 
                     Remark=order.Remarks,
-                    GroupId=firstChild?.GroupId ?? 0
+                    GroupId=firstChild?.GroupId ?? 0,
+                    ApplicateRate=order.ApplicateRate 
                 };
                 response.OrderCategoryOptions = GetOrderCategoryOptions(response.OrderCategory);
                 return ReturnData<BuyerOrderResponse>.SuccessResponse(response, "Order retrieved successfully", 200);
