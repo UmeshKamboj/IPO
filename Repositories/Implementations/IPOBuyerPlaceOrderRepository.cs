@@ -776,6 +776,7 @@ namespace IPOClient.Repositories.Implementations
             order.ModifiedDate = DateTime.UtcNow;
             order.DateTime = request.DateTime;
             order.Remarks = request.RemarksIds;
+            order.ApplicateRate = request.ApplicateRate;
             string? premiumStrikePrice = request.PremiumStrikePrice;
             if (request.OrderCategory != 4 && request.OrderCategory != 5)
             {
@@ -837,6 +838,9 @@ namespace IPOClient.Repositories.Implementations
                 child.ModifiedBy = userId.ToString();
                 child.ModifiedDate = DateTime.UtcNow;
             }
+            await _context.SaveChangesAsync();
+            order.Quantity = order.OrderChild.Count;
+
             await _context.SaveChangesAsync();
             return order.OrderId;
         }
