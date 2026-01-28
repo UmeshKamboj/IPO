@@ -19,7 +19,7 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetAllOrderChildrenWithSearchAsync(OrderDetailPagedRequest request, int companyId, int ipoId);
         Task<ReturnData> UpdateOrderAsync(EditIPOOrderRequest request, int modifiedByUserId); //update order
         Task<ReturnData> DeleteOrderAsync(int orderId, int userId); //Soft delete Order
-        Task<ReturnData> DeleteAllOrderAsync(int ipoId, int userId, int companyId); //Soft delete all Order and backup
+        Task<ReturnData<FileResponse>> DeleteAllOrderAsync(int ipoId, int userId, int companyId); //Soft delete all Order and backup
         Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId);//Bulk Order Upload
 
         Task<ReturnData<FileResponse>> DownloadSingleFileAsync(int ipoId,int companyId,DownloadFilterType downloadFilterType);
@@ -27,5 +27,6 @@ namespace IPOClient.Services.Interfaces
 
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
         OrderCategoryOptionsResponse GetOrderCategoryOptions(int orderCategoryType);
+        Task<ReturnData<PagedResult<GroupWiseBillingResponse>>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
     }
 }

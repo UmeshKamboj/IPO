@@ -1,4 +1,5 @@
-﻿using IPOClient.Models.Entities;
+﻿using Azure;
+using IPOClient.Models.Entities;
 using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Requests.IPOMaster.Response;
@@ -6,6 +7,7 @@ using IPOClient.Models.Responses;
 using IPOClient.Repositories.Implementations;
 using IPOClient.Repositories.Interfaces;
 using IPOClient.Services.Interfaces;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.VisualBasic.FileIO;
 using System.IO.Compression;
 using System.Text;
@@ -281,20 +283,33 @@ namespace IPOClient.Services.Implementations
             
 
         }
-        public async Task<ReturnData> DeleteAllOrderAsync(int ipoId, int userId, int companyId)
+        public async Task<ReturnData<FileResponse>> DeleteAllOrderAsync(int ipoId, int userId, int companyId)
         {
             try
             {
-                var success = await _buyerPlaceOrderRepository.DeletedAllOrderAsync(ipoId, userId, companyId);
-                if (!success)
+                byte[]? bytes = await _buyerPlaceOrderRepository.DeletedAllOrderAsync(ipoId, userId, companyId);
+                var ipo = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+               
+
+                if (bytes!=null)
                 {
-                    return ReturnData.ErrorResponse("Order not found", 404);
+                    var file = new FileResponse
+                    {
+                        Bytes = bytes,
+                        ContentType = "text/csv",
+                        FileName = $"{ipo?.IPOName ?? ""}_DeletedOrders_{DateTime.Now:yyyyMMddHH}.csv"
+                    };
+                    return ReturnData<FileResponse>.SuccessResponse(file, "Order deleted successfully", 200);
                 }
-                return ReturnData.SuccessResponse("Order deleted successfully", 200);
+                else
+                {
+                    return ReturnData<FileResponse>.ErrorResponse("Order not found", 404);
+                }
+                    
             }
             catch (Exception ex)
             {
-                return ReturnData.ErrorResponse($"Error deleting order: {ex.Message}", 500);
+                return ReturnData<FileResponse>.ErrorResponse($"Error deleting order: {ex.Message}", 500);
             }
         }
 
@@ -581,6 +596,141 @@ namespace IPOClient.Services.Implementations
             }
 
             return response;
+        }
+        public async Task<ReturnData<PagedResult<GroupWiseBillingResponse>>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId)
+        {
+            try
+            {
+                var data = await _buyerPlaceOrderRepository.GetGroupWiseBillingListAsync(request, companyId, ipoId);
+                var groupedResult = new List<GroupWiseBillingResponse>();
+
+                foreach (var grp in data.GroupBy(x => x.GroupId))
+                {
+                    var first = grp.First();
+
+                    var res = new GroupWiseBillingResponse
+                    {
+                        GroupName = first.Group?.GroupName ?? "-"
+                    };
+
+                    foreach (var row in grp)
+                    {
+                        var order = row.IPOOrder;
+
+                        var qty = order.OrderType == (int)IPOOrderType.BUY
+                                    ? row.Quantity
+                                    : -row.Quantity;
+
+                        var amount = qty * order.Rate;
+
+                        // ===== KOSTAK
+                        if (order.OrderCategory == (int)IPOOrderCategory.Kostak)
+                            FillRetailSHNI(order, res, qty, amount);
+
+                        // ===== SUBJECT TO
+                        if (order.OrderCategory == (int)IPOOrderCategory.SubjectTo)
+                            FillSubjectTo(order, res, qty, amount);
+
+                        // ===== PREMIUM
+                        if (order.OrderCategory == (int)IPOOrderCategory.Premium)
+                        {
+                            res.Premium.Shares += qty;
+                            res.Premium.Billing += amount;
+                        }
+
+                        // ===== OPTIONS
+                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice) &&
+                            order.PremiumStrikePrice != "Application" &&
+                            order.PremiumStrikePrice != "Premium")
+                        {
+                            if (order.OrderType == (int)IPOOrderType.BUY)
+                                res.Options.CallAmount += amount;
+                            else
+                                res.Options.PutAmount += amount;
+                        }
+
+                        res.TotalShares += qty;
+                        res.TotalAmount += amount;
+                    }
+
+                    //  FULL ZERO GROUP SKIP
+                    if (!IsGroupAllZero(res))
+                        groupedResult.Add(res);
+                }
+
+                //  PAGING AFTER GROUPING
+                var totalCount = groupedResult.Count;
+
+                var pagedItems = groupedResult
+                    .Skip(request.Skip)
+                    .Take(request.PageSize)
+                    .ToList();
+
+                var pagedResult = new PagedResult<GroupWiseBillingResponse>(
+                    pagedItems,
+                    totalCount,
+                    request.Skip,
+                    request.PageSize);
+
+                return ReturnData<PagedResult<GroupWiseBillingResponse>>.SuccessResponse(pagedResult, "Group wise billing retrieved", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<PagedResult<GroupWiseBillingResponse>>.ErrorResponse($"Error: {ex.Message}", 500);
+            }
+        }
+        private static void FillRetailSHNI(IPO_BuyerOrder order, GroupWiseBillingResponse res, int qty, decimal amount)
+        {
+            var target = order.InvestorType switch
+            {
+                (int)IPOInvestorType.Retail => res.Retail,
+                (int)IPOInvestorType.SHNI => res.SHNI,
+                _ => res.BHNI
+            }; target.Count += qty;
+            target.Billing += amount;
+        }
+
+        private static void FillSubjectTo(IPO_BuyerOrder order, GroupWiseBillingResponse res, int qty, decimal amount)
+        {
+            var target = order.InvestorType switch
+            {
+                (int)IPOInvestorType.Retail => res.SubjectTo_Retail,
+                (int)IPOInvestorType.SHNI => res.SubjectTo_SHNI,
+                _ => res.SubjectTo_BHNI
+            };
+
+            target.Count += qty;
+            target.Billing += amount;
+        }
+        private static bool IsGroupAllZero(GroupWiseBillingResponse r)
+        {
+            return
+                r.Retail.Count == 0 &&
+                r.Retail.Billing == 0 &&
+
+                r.SHNI.Count == 0 &&
+                r.SHNI.Billing == 0 &&
+
+                r.BHNI.Count == 0 &&
+                r.BHNI.Billing == 0 &&
+
+                r.SubjectTo_Retail.Count == 0 &&
+                r.SubjectTo_Retail.Billing == 0 &&
+
+                r.SubjectTo_SHNI.Count == 0 &&
+                r.SubjectTo_SHNI.Billing == 0 &&
+
+                r.SubjectTo_BHNI.Count == 0 &&
+                r.SubjectTo_BHNI.Billing == 0 &&
+
+                r.Premium.Shares == 0 &&
+                r.Premium.Billing == 0 &&
+
+                r.Options.CallAmount == 0 &&
+                r.Options.PutAmount == 0 &&
+
+                r.TotalShares == 0 &&
+                r.TotalAmount == 0;
         }
     }
 }
