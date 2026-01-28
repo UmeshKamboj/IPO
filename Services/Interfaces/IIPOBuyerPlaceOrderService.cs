@@ -20,5 +20,6 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData> DeleteOrderAsync(int orderId, int userId); //Soft delete Order
         Task<ReturnData> DeleteAllOrderAsync(int ipoId, int userId, int companyId); //Soft delete all Order and backup
         Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId);//Bulk Order Upload
+        OrderCategoryOptionsResponse GetOrderCategoryOptions(int orderCategoryType);
     }
 }
