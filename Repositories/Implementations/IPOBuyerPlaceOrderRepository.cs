@@ -7,6 +7,7 @@ using IPOClient.Models.Responses;
 using IPOClient.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using System.Buffers;
+using System.Text;
 
 namespace IPOClient.Repositories.Implementations
 {
@@ -1083,7 +1084,7 @@ namespace IPOClient.Repositories.Implementations
             return true;
         }
 
-        public async Task<bool> DeletedAllOrderAsync(int ipoId, int userId, int companyId)
+        public async Task<byte[]?> DeletedAllOrderAsync(int ipoId, int userId, int companyId)
         {
             using var tx = await _context.Database.BeginTransactionAsync();
 
@@ -1091,11 +1092,37 @@ namespace IPOClient.Repositories.Implementations
             {
                 var masters = await _context.BuyerPlaceOrderMasters
                .Include(m => m.Orders)
-                   .ThenInclude(o => o.OrderChild)
+                   .ThenInclude(o => o.OrderChild).ThenInclude(c=>c.Group)
                .Where(x =>  x.CompanyId == companyId && x.IPOId == ipoId &&!x.IsDeleted).ToListAsync();
 
                 if (!masters.Any())
-                    return false;
+                    return null;
+                // =========================
+                // COLLECT DATA FOR EXCEL
+                // =========================
+                var excelRows = new List<DeletedAllOrderExcelRowResponse>();
+
+                foreach (var master in masters)
+                {
+                    foreach (var order in master.Orders.Where(o => !o.IsDeleted))
+                    {
+                        var firstChild = order.OrderChild?.FirstOrDefault();
+                        var remarks=await ResolveRemarkNamesAsync(order.Remarks, ipoId, companyId);
+                        excelRows.Add(new DeletedAllOrderExcelRowResponse
+                       {
+                                GroupName = firstChild?.Group?.GroupName ?? "-",
+                                OrderCategory = ((IPOOrderCategory)order.OrderCategory).ToString(),
+                                InvestorType = ((IPOInvestorType)order.InvestorType).ToString(),
+                                OrderType= ((IPOOrderType)order.OrderType).ToString(),
+                                Quantity = order.Quantity,
+                                Rate = order.Rate,
+                                PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
+                                Remarks = remarks ?? "-",
+                                Date = order.DateTime.ToString("yyyy-MM-dd"),
+                                Time = order.DateTime.ToString("HH:mm:ss")
+                       });
+                    }
+                }
 
                 // =========================
                 // 1️ CREATE DELETE SUMMARY
@@ -1172,7 +1199,20 @@ namespace IPOClient.Repositories.Implementations
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
 
-                return true;
+                // =========================
+                //  GENERATE EXCEL
+                // =========================
+                var sb = new StringBuilder();
+                sb.AppendLine("Group,OrderType,OrderCategory,InvestorType,PremiumStrikePrice,Qty,Rate,Date,Time,Remarks");
+
+                foreach (var r in excelRows)
+                {
+                    sb.AppendLine(
+                        $"{r.GroupName},{r.OrderType},{r.OrderCategory},{r.InvestorType},{r.PremiumStrikePrice},{r.Quantity}," +
+                        $"{r.Rate},{r.Date},{r.Time},{r.Remarks}");
+                }
+                byte[] bytes=!string.IsNullOrEmpty(sb.ToString()) ? Encoding.UTF8.GetBytes(sb.ToString()) : Array.Empty<byte>();
+                return Encoding.UTF8.GetBytes(sb.ToString());
             }
             catch
             {
@@ -1287,6 +1327,29 @@ namespace IPOClient.Repositories.Implementations
 
             var items = await query.ToListAsync();
             return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
+        }
+        public async Task<List<IPO_PlaceOrderChild>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId)
+        {
+            var query = _context.ChildPlaceOrder
+               .Include(c => c.IPOOrder)
+                   .ThenInclude(o => o.BuyerMaster)
+               .Include(c => c.Group)
+               .Where(c => c.CompanyId == companyId &&
+                          c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                          c.IPOOrder.BuyerMaster.IsActive && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted);
+
+            // Global search across multiple fields
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                var searchLower = request.SearchValue.ToLower();
+                query = query.Where(c =>
+                    (c.Group != null &&
+                     c.Group.GroupName != null &&
+                     c.Group.GroupName.ToLower().Contains(searchLower))
+                );
+            }
+            var totalCount = await query.CountAsync();
+            return await query.ToListAsync();
         }
     }
 }

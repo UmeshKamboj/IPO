@@ -25,11 +25,12 @@ namespace IPOClient.Repositories.Interfaces
 
         Task<bool> BulkOrderUploadAsync(int ipoId, List<string[]> rows, int createdByUserId, int companyId);//Bulk Order Upload
 
-        Task<bool> DeletedAllOrderAsync(int ipoId,int userId, int companyId); //Delete all order data behlaf of IPO
+        Task<byte[]?> DeletedAllOrderAsync(int ipoId, int userId, int companyId); //Delete all order data behlaf of IPO
 
         Task<List<IPO_PlaceOrderChild>> GetOrdersAsync( int ipoId,int companyId, DownloadFilterType downloadFilterType);
         Task<string> ResolveRemarkNamesAsync(string? remarkIds, int ipoId,int companyId);
 
         Task<PagedResult<IPO_PlaceOrderChild>> GetClientWisePagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<List<IPO_PlaceOrderChild>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
     }
 }
