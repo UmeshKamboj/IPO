@@ -121,7 +121,22 @@ namespace IPOClient.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// Update IPO Open Price
+        /// </summary>
+        /// <param name="id">IPO ID to update</param>
+        /// <param name="openPrice">New Open Price</param>
+        [HttpPut("{id}/update-openprice")]
+        public async Task<IActionResult> UpdateIPOOpenPrice(int id, decimal openPrice)
+        {
+            var userId = GetCurrentUserId();
+            var result = await _ipoService.UpdateIPOOpenPriceAsync(id, openPrice, userId);
 
+            if (!result.Success)
+                return StatusCode(result.ResponseCode ?? 400, result);
+
+            return Ok(result);
+        }
 
 
         // Helpers to get claims
