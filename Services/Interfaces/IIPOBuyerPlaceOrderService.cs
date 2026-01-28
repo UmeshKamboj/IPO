@@ -1,4 +1,5 @@
 ﻿using IPOClient.Models.Entities;
+using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Requests.IPOMaster.Response;
 using IPOClient.Models.Responses;
@@ -20,6 +21,11 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData> DeleteOrderAsync(int orderId, int userId); //Soft delete Order
         Task<ReturnData> DeleteAllOrderAsync(int ipoId, int userId, int companyId); //Soft delete all Order and backup
         Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId);//Bulk Order Upload
+
+        Task<ReturnData<FileResponse>> DownloadSingleFileAsync(int ipoId,int companyId,DownloadFilterType downloadFilterType);
+        Task<ReturnData<FileResponse>> DownloadGroupWiseFileAsync(int ipoId,int companyId,DownloadFilterType downloadFilterType);
+
+        Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
         OrderCategoryOptionsResponse GetOrderCategoryOptions(int orderCategoryType);
     }
 }

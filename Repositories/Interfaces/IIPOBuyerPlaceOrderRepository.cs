@@ -1,4 +1,5 @@
 ﻿using IPOClient.Models.Entities;
+using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Requests.IPOMaster.Response;
 using IPOClient.Models.Responses;
@@ -25,5 +26,10 @@ namespace IPOClient.Repositories.Interfaces
         Task<bool> BulkOrderUploadAsync(int ipoId, List<string[]> rows, int createdByUserId, int companyId);//Bulk Order Upload
 
         Task<bool> DeletedAllOrderAsync(int ipoId,int userId, int companyId); //Delete all order data behlaf of IPO
+
+        Task<List<IPO_PlaceOrderChild>> GetOrdersAsync( int ipoId,int companyId, DownloadFilterType downloadFilterType);
+        Task<string> ResolveRemarkNamesAsync(string? remarkIds, int ipoId,int companyId);
+
+        Task<PagedResult<IPO_PlaceOrderChild>> GetClientWisePagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
     }
 }
