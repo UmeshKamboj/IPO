@@ -10,7 +10,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public List<BuyerOrderResponse> Orders { get; set; }
 
     }
-    public class BuyerOrderResponse
+    public class BuyerOrderResponse 
     {
         public int OrderId { get; set; }
         public int OrderType { get; set; }
@@ -36,6 +36,7 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public string? DematNumber { get; set; }
         public string? ApplicationNumber { get; set; }
         public string? Remark { get; set; }
+        public OrderCategoryOptionsResponse? OrderCategoryOptions { get; set; }
 
     }
     

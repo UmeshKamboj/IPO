@@ -103,7 +103,7 @@ namespace IPOClient.Services.Implementations
                     SrNo = 1, // single record
                     OrderId = order.OrderId,
                     BuyerMasterId = order.BuyerMaster.BuyerMasterId,
-                    GroupName = firstChild?.Group?.GroupName ?? "-",
+                    GroupName = firstChild?.Group?.GroupName ?? "-", 
                     OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                     OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
                     InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
@@ -117,7 +117,7 @@ namespace IPOClient.Services.Implementations
                     Remark=order.Remarks,
                     GroupId=firstChild?.GroupId ?? 0
                 };
-
+                response.OrderCategoryOptions = GetOrderCategoryOptions(response.OrderCategory);
                 return ReturnData<BuyerOrderResponse>.SuccessResponse(response, "Order retrieved successfully", 200);
             }
             catch (Exception ex)
@@ -410,6 +410,68 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-      
+        /// <summary>
+        /// Get order category options based on category type for dropdown
+        /// </summary>
+        /// <param name="orderCategoryType">1 = Call/Put, 2 = Premium, 3 = Kostak/SubjectTo</param>
+        public OrderCategoryOptionsResponse GetOrderCategoryOptions(int orderCategoryType)
+        {
+            var response = new OrderCategoryOptionsResponse();
+
+            // Order Types - Buy/Sell are common for all categories
+            response.OrderTypes = new List<DropdownOption>
+            {
+                new DropdownOption { Id = (int)IPOOrderType.BUY, Name = IPOOrderType.BUY.ToString() },
+                new DropdownOption { Id = (int)IPOOrderType.SELL, Name = IPOOrderType.SELL.ToString() }
+            };
+
+            switch (orderCategoryType)
+            {
+                case 4: // Call/Put
+                case 5:
+                    response.OrderCategories = new List<DropdownOption>
+                    {
+                        new DropdownOption { Id = (int)IPOOrderCategory.CALL, Name = IPOOrderCategory.CALL.ToString() },
+                        new DropdownOption { Id = (int)IPOOrderCategory.PUT, Name = IPOOrderCategory.PUT.ToString() }
+                    };
+                    response.InvestorTypes = new List<DropdownOption>
+                    {
+                        new DropdownOption { Id = (int)IPOInvestorType.OPTIONS, Name = IPOInvestorType.OPTIONS.ToString() }
+                    };
+                    break;
+
+                case 3: // Premium
+                    response.OrderCategories = new List<DropdownOption>
+                    {
+                        new DropdownOption { Id = (int)IPOOrderCategory.Premium, Name = IPOOrderCategory.Premium.ToString() }
+                    };
+                    response.InvestorTypes = new List<DropdownOption>
+                    {
+                        new DropdownOption { Id = (int)IPOInvestorType.Premium, Name = IPOInvestorType.Premium.ToString() }
+                    };
+                    break;
+
+                case 2: // Kostak/SubjectTo
+                case 1:
+                    response.OrderCategories = new List<DropdownOption>
+                    {
+                        new DropdownOption { Id = (int)IPOOrderCategory.Kostak, Name = IPOOrderCategory.Kostak.ToString() },
+                        new DropdownOption { Id = (int)IPOOrderCategory.SubjectTo, Name = IPOOrderCategory.SubjectTo.ToString() }
+                    };
+                    response.InvestorTypes = new List<DropdownOption>
+                    {
+                        new DropdownOption { Id = (int)IPOInvestorType.SHNI, Name = IPOInvestorType.SHNI.ToString() },
+                        new DropdownOption { Id = (int)IPOInvestorType.Retail, Name = IPOInvestorType.Retail.ToString() },
+                        new DropdownOption { Id = (int)IPOInvestorType.BHNI, Name = IPOInvestorType.BHNI.ToString() }
+                    };
+                    break;
+
+                default:
+                    // Return empty lists for invalid category type
+                    break;
+            }
+
+            return response;
+        }
     }
 }

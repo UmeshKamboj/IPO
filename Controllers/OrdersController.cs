@@ -203,6 +203,23 @@ namespace IPOClient.Controllers
         }
 
         /// <summary>
+        /// Get order category options for dropdown based on category type
+        /// </summary>
+        /// <remarks>
+        /// Returns dropdown options for OrderCategory, OrderType, and InvestorType based on the category type:
+        /// - 1 = Call/Put: OrderCategories [CALL, PUT], InvestorTypes [OPTIONS]
+        /// - 2 = Premium: OrderCategories [Premium], InvestorTypes [Premium]
+        /// - 3 = Kostak/SubjectTo: OrderCategories [Kostak, SubjectTo], InvestorTypes [SHNI, Retail, BHNI]
+        /// OrderTypes [BUY, SELL] are returned for all category types.
+        /// </remarks>
+        [HttpGet("ordercategoryoptions/{orderCategoryType}")]
+        public IActionResult GetOrderCategoryOptions(int orderCategoryType)
+        {
+            var result = _ipoBuyerPlaceOrderService.GetOrderCategoryOptions(orderCategoryType);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Upload IPO bulk orders via CSV
         /// </summary>
         [HttpPost("uploadbulk")]
