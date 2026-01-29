@@ -561,6 +561,20 @@ namespace IPOClient.Repositories.Implementations
                 response.StrikePrices.Add(block);
             }
 
+            //  StrikePrices never empty
+            if (!response.StrikePrices.Any())
+            {
+                response.StrikePrices.Add(new StrikePriceBlock
+                {
+                    StrikePrice = 0,
+                    Call_TotalShare = 0,
+                    Call_Avg = 0,
+                    Call_Amount = 0,
+                    Put_TotalShare = 0,
+                    Put_Avg = 0,
+                    Put_Amount = 0
+                });
+            }
             return response;
         }
         //public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId)
