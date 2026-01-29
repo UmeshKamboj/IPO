@@ -32,5 +32,7 @@ namespace IPOClient.Repositories.Interfaces
 
         Task<PagedResult<IPO_PlaceOrderChild>> GetClientWisePagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
         Task<List<IPO_PlaceOrderChild>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
+
+        Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListByOrderIdAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType,int orderId);
     }
 }
