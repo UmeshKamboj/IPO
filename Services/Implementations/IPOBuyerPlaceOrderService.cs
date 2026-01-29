@@ -165,7 +165,10 @@ namespace IPOClient.Services.Implementations
                     ))
                     .ToList() ?? new List<BuyerOrderResponse>();
 
-                var result = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize);
+                var result = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize)
+                {
+                    Extras = pagedResult.Extras // Pass through extras like totalApplications, pendingPanApplications
+                };
                 return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Order details retrieved successfully", 200);
             }
             catch (Exception ex)
@@ -731,6 +734,30 @@ namespace IPOClient.Services.Implementations
 
                 r.TotalShares == 0 &&
                 r.TotalAmount == 0;
+        }
+        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderDetailPagedListByOrderIdAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType,int orderId)
+        {
+            try
+            {
+                var pagedResult = await _buyerPlaceOrderRepository.GetOrderDetailPagedListByOrderIdAsync(request, companyId, ipoId, orderType, orderId);
+
+                var responses = pagedResult.Items?
+                    .Select((order, index) => MapToOrderDetailResponse(
+                        order,
+                        srNo: request.Skip + index + 1
+                    ))
+                    .ToList() ?? new List<BuyerOrderResponse>();
+
+                var result = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize)
+                {
+                    Extras = pagedResult.Extras // Pass through extras like totalApplications, pendingPanApplications
+                };
+                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Order details retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
+            }
         }
     }
 }
