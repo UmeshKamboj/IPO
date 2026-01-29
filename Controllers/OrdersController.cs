@@ -302,6 +302,33 @@ namespace IPOClient.Controllers
 
             return Ok(result);
         }
+
+        /// <summary>
+        /// Order BUY DetailList by OrderID
+        /// </summary>
+        [HttpPost("{ipoId}/orderdetail/BUY/{orderid}")]
+        public async Task<IActionResult> GetBuyOrderDetailListbyOrderId([FromBody] OrderDetailFilterRequest request, int ipoId,int orderid)
+        {
+            var companyId = GetCompanyId();
+            int buyValue = (int)IPOOrderType.BUY;
+            var result = await _ipoBuyerPlaceOrderService.GetOrderDetailPagedListByOrderIdAsync(request, companyId, ipoId, buyValue, orderid);
+
+            var statusCode = result.ResponseCode == 200 ? 200 : 400;
+            return StatusCode(statusCode, result);
+        }
+        /// <summary>
+        /// Order SELL DetailList by OrderID
+        /// </summary>
+        [HttpPost("{ipoId}/orderdetail/SELL/{orderid}")]
+        public async Task<IActionResult> GetSellOrderDetailListbyOrderId([FromBody] OrderDetailFilterRequest request, int ipoId, int orderid)
+        {
+            var companyId = GetCompanyId();
+            int sellValue = (int)IPOOrderType.SELL;
+            var result = await _ipoBuyerPlaceOrderService.GetOrderDetailPagedListByOrderIdAsync(request, companyId, ipoId, sellValue, orderid);
+
+            var statusCode = result.ResponseCode == 200 ? 200 : 400;
+            return StatusCode(statusCode, result);
+        }
         // Helpers to get claims
         private int GetCurrentUserId()
         {
