@@ -7,6 +7,7 @@ using IPOClient.Models.Responses;
 using IPOClient.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Text;
 
 namespace IPOClient.Repositories.Implementations
@@ -321,7 +322,7 @@ namespace IPOClient.Repositories.Implementations
 
             // Get total count before pagination
             var totalCount = await query.CountAsync();
-
+            var pendingPanApplications = await query.CountAsync(c => string.IsNullOrEmpty(c.PANNumber));
             // Order and apply pagination
             query = query.OrderByDescending(c => c.IPOOrder.BuyerMaster.CreatedDate)
                          .Skip(request.Skip)
@@ -355,7 +356,19 @@ namespace IPOClient.Repositories.Implementations
                     order.IPOOrder.Remarks = "-";
                 }
             }
-            return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
+            var result = new PagedResult<IPO_PlaceOrderChild>(
+                 items,
+                 totalCount,
+                 request.Skip,
+                 request.PageSize
+             );
+
+            result.Extras = new Dictionary<string, int>
+            {
+                { "totalApplications", totalCount },
+                { "pendingPanApplications", pendingPanApplications }
+            };
+            return result;
         }
 
         public async Task<bool> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId)
@@ -1364,6 +1377,74 @@ namespace IPOClient.Repositories.Implementations
             }
             var totalCount = await query.CountAsync();
             return await query.ToListAsync();
+        }
+
+        public async Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListByOrderIdAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType, int orderId)
+        {
+            var query = _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                .Include(c => c.Group)
+                .AsQueryable();
+
+            query = query.Where(c => c.IPOOrder.OrderId == orderId && c.OrderId==orderId &&
+                c.IPOOrder.BuyerMaster.IsActive &&
+                c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                c.IPOOrder.OrderType == orderType &&
+                c.IPOOrder.BuyerMaster.IPOId == ipoId && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted &&
+                new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) &&
+                new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
+            );
+            // Get total count before pagination
+            var totalCount = await query.CountAsync();
+            var pendingPanApplications = await query.CountAsync(c => string.IsNullOrEmpty(c.PANNumber));
+            // Order and apply pagination
+            query = query.OrderByDescending(c => c.IPOOrder.BuyerMaster.CreatedDate)
+                         .Skip(request.Skip)
+                         .Take(request.PageSize);
+
+            var items = await query.ToListAsync();
+            foreach (var order in items)
+            {
+                string remark = order.IPOOrder.Remarks ?? "";
+                if (!string.IsNullOrEmpty(remark))
+                {
+                    var remarkIds = remark.Split(',')
+                        .Select(id => int.TryParse(id, out var parsedId) ? parsedId : (int?)null)
+                        .Where(id => id.HasValue)
+                        .Select(id => id.Value)
+                        .ToList();
+                    if (remarkIds.Any())
+                    {
+                        var remarkNames = await _context.IPO_OrderRemark
+                      .Where(r => remarkIds.Contains(r.RemarkId) && r.CompanyId == companyId && r.IsActive)
+                      .Select(r => r.Remark)
+                      .ToListAsync();
+
+                        order.IPOOrder.Remarks = string.Join(", ", remarkNames);
+                    }
+
+
+                }
+                else
+                {
+                    order.IPOOrder.Remarks = "-";
+                }
+            }
+
+            var result = new PagedResult<IPO_PlaceOrderChild>(
+                items,
+                totalCount,
+                request.Skip,
+                request.PageSize
+            );
+
+            result.Extras = new Dictionary<string, int>
+            {
+                { "totalApplications", totalCount },
+                { "pendingPanApplications", pendingPanApplications }
+            };
+            return result;
         }
     }
 }
