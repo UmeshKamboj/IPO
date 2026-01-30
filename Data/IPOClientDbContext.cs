@@ -26,6 +26,7 @@ namespace IPOClient.Data
         public DbSet<OrderMaster_DeletedHistory> OrderMaster_DeletedHistory { get; set; }
         public DbSet<Order_DeletedHistory> Order_DeletedHistory { get; set; }
         public DbSet<OrderChild_DeletedHistory> OrderChild_DeletedHistory { get; set; }
+        public DbSet<IPO_PaymentTransaction> PaymentTransactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

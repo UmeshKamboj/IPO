@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IPOClient.Migrations
 {
     [DbContext(typeof(IPOClientDbContext))]
-    [Migration("20260123100058_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260130074727_AddTablePaymentTransaction")]
+    partial class AddTablePaymentTransaction
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -101,6 +101,9 @@ namespace IPOClient.Migrations
                     b.Property<int>("InvestorType")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("nvarchar(max)");
 
@@ -112,6 +115,9 @@ namespace IPOClient.Migrations
 
                     b.Property<DateTime>("OrderCreatedDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("OrderSource")
+                        .HasColumnType("int");
 
                     b.Property<int>("OrderType")
                         .HasColumnType("int");
@@ -125,6 +131,9 @@ namespace IPOClient.Migrations
                     b.Property<decimal>("Rate")
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("Remarks")
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("OrderId");
 
@@ -154,6 +163,9 @@ namespace IPOClient.Migrations
                         .HasColumnType("int");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<string>("ModifiedBy")
@@ -295,6 +307,34 @@ namespace IPOClient.Migrations
                     b.ToTable("IPO_ClientSetup", (string)null);
                 });
 
+            modelBuilder.Entity("IPOClient.Models.Entities.IPO_DeleteOrderHistory", b =>
+                {
+                    b.Property<int>("HistoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("HistoryId"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("DeletedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Remark")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TotalOrdersDeleted")
+                        .HasColumnType("int");
+
+                    b.HasKey("HistoryId");
+
+                    b.ToTable("IPO_DeleteOrderHistory");
+                });
+
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_GroupMaster", b =>
                 {
                     b.Property<int>("IPOGroupId")
@@ -420,6 +460,91 @@ namespace IPOClient.Migrations
                     b.ToTable("IPO_IPOMaster");
                 });
 
+            modelBuilder.Entity("IPOClient.Models.Entities.IPO_Order_Remark", b =>
+                {
+                    b.Property<int>("RemarkId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RemarkId"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("IPOId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Remark")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("RemarkId");
+
+                    b.ToTable("IPO_OrderRemark");
+                });
+
+            modelBuilder.Entity("IPOClient.Models.Entities.IPO_PaymentTransaction", b =>
+                {
+                    b.Property<int>("PaymentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PaymentId"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("AmountType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedOn")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IpoId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsJVTransaction")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Remark")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("TransactionDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PaymentId");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("IpoId");
+
+                    b.ToTable("PaymentTransactions");
+                });
+
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_PlaceOrderChild", b =>
                 {
                     b.Property<int>("POChildId")
@@ -451,6 +576,9 @@ namespace IPOClient.Migrations
 
                     b.Property<int>("GroupId")
                         .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
 
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("nvarchar(max)");
@@ -559,6 +687,147 @@ namespace IPOClient.Migrations
                     b.ToTable("IPO_UserMasters");
                 });
 
+            modelBuilder.Entity("IPOClient.Models.Entities.OrderChild_DeletedHistory", b =>
+                {
+                    b.Property<int>("HistoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("HistoryId"));
+
+                    b.Property<int?>("AllotedQty")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ApplicationNo")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ClientName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DeleteHistoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("DeletedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DematNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PANNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("POChildId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.HasKey("HistoryId");
+
+                    b.HasIndex("DeleteHistoryId");
+
+                    b.ToTable("OrderChild_DeletedHistory");
+                });
+
+            modelBuilder.Entity("IPOClient.Models.Entities.OrderMaster_DeletedHistory", b =>
+                {
+                    b.Property<int>("HistoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("HistoryId"));
+
+                    b.Property<int>("BuyerMasterId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CompanyId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DeleteHistoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("DeletedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("IPOId")
+                        .HasColumnType("int");
+
+                    b.HasKey("HistoryId");
+
+                    b.HasIndex("DeleteHistoryId");
+
+                    b.ToTable("OrderMaster_DeletedHistory");
+                });
+
+            modelBuilder.Entity("IPOClient.Models.Entities.Order_DeletedHistory", b =>
+                {
+                    b.Property<int>("HistoryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("HistoryId"));
+
+                    b.Property<int>("BuyerMasterId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("DateTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DeleteHistoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DeletedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("DeletedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("InvestorType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrderCategory")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrderType")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Rate")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Remarks")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("HistoryId");
+
+                    b.HasIndex("DeleteHistoryId");
+
+                    b.ToTable("Order_DeletedHistory");
+                });
+
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_BuyerOrder", b =>
                 {
                     b.HasOne("IPOClient.Models.Entities.IPO_BuyerPlaceOrderMaster", "BuyerMaster")
@@ -610,6 +879,25 @@ namespace IPOClient.Migrations
                     b.Navigation("IPOTypeMaster");
                 });
 
+            modelBuilder.Entity("IPOClient.Models.Entities.IPO_PaymentTransaction", b =>
+                {
+                    b.HasOne("IPOClient.Models.Entities.IPO_GroupMaster", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IPOClient.Models.Entities.IPO_IPOMaster", "Ipo")
+                        .WithMany()
+                        .HasForeignKey("IpoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
+
+                    b.Navigation("Ipo");
+                });
+
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_PlaceOrderChild", b =>
                 {
                     b.HasOne("IPOClient.Models.Entities.IPO_GroupMaster", "Group")
@@ -629,6 +917,39 @@ namespace IPOClient.Migrations
                     b.Navigation("IPOOrder");
                 });
 
+            modelBuilder.Entity("IPOClient.Models.Entities.OrderChild_DeletedHistory", b =>
+                {
+                    b.HasOne("IPOClient.Models.Entities.IPO_DeleteOrderHistory", "DeleteHistory")
+                        .WithMany("DeletedChildren")
+                        .HasForeignKey("DeleteHistoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeleteHistory");
+                });
+
+            modelBuilder.Entity("IPOClient.Models.Entities.OrderMaster_DeletedHistory", b =>
+                {
+                    b.HasOne("IPOClient.Models.Entities.IPO_DeleteOrderHistory", "DeleteHistory")
+                        .WithMany("DeletedMasters")
+                        .HasForeignKey("DeleteHistoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeleteHistory");
+                });
+
+            modelBuilder.Entity("IPOClient.Models.Entities.Order_DeletedHistory", b =>
+                {
+                    b.HasOne("IPOClient.Models.Entities.IPO_DeleteOrderHistory", "DeleteHistory")
+                        .WithMany("DeletedOrders")
+                        .HasForeignKey("DeleteHistoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeleteHistory");
+                });
+
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_BuyerOrder", b =>
                 {
                     b.Navigation("OrderChild");
@@ -642,6 +963,15 @@ namespace IPOClient.Migrations
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_ClientDeleteHistory", b =>
                 {
                     b.Navigation("Details");
+                });
+
+            modelBuilder.Entity("IPOClient.Models.Entities.IPO_DeleteOrderHistory", b =>
+                {
+                    b.Navigation("DeletedChildren");
+
+                    b.Navigation("DeletedMasters");
+
+                    b.Navigation("DeletedOrders");
                 });
 #pragma warning restore 612, 618
         }

@@ -54,7 +54,8 @@ namespace IPOClient.Repositories.Implementations
                     CompanyId = companyId,
                     OrderCreatedDate= DateTime.UtcNow,
                     OrderChild = new List<IPO_PlaceOrderChild>(),
-                    Remarks= request.RemarksIds
+                    Remarks= request.RemarksIds,
+                    OrderSource = (int)OrderSourceType.Manual
                 };
 
                 // split
@@ -1081,7 +1082,8 @@ namespace IPOClient.Repositories.Implementations
                     CreatedBy = createdByUserId,
                     CompanyId = companyId,
                     OrderCreatedDate = DateTime.UtcNow,
-                    OrderChild = new List<IPO_PlaceOrderChild>()
+                    OrderChild = new List<IPO_PlaceOrderChild>(),
+                    OrderSource = (int)OrderSourceType.Upload
                 };
 
                 // =========================

@@ -4,6 +4,7 @@ using IPOClient.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IPOClient.Migrations
 {
     [DbContext(typeof(IPOClientDbContext))]
-    partial class IPOClientDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260130052140_AddOrderSourceBuyerOrder")]
+    partial class AddOrderSourceBuyerOrder
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -495,53 +498,6 @@ namespace IPOClient.Migrations
                     b.ToTable("IPO_OrderRemark");
                 });
 
-            modelBuilder.Entity("IPOClient.Models.Entities.IPO_PaymentTransaction", b =>
-                {
-                    b.Property<int>("PaymentId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PaymentId"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18, 4)");
-
-                    b.Property<int>("AmountType")
-                        .HasColumnType("int");
-
-                    b.Property<int>("CompanyId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedOn")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("GroupId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("IpoId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsJVTransaction")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Remark")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("TransactionDate")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("PaymentId");
-
-                    b.HasIndex("GroupId");
-
-                    b.HasIndex("IpoId");
-
-                    b.ToTable("PaymentTransactions");
-                });
-
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_PlaceOrderChild", b =>
                 {
                     b.Property<int>("POChildId")
@@ -874,25 +830,6 @@ namespace IPOClient.Migrations
                         .HasForeignKey("IPOType");
 
                     b.Navigation("IPOTypeMaster");
-                });
-
-            modelBuilder.Entity("IPOClient.Models.Entities.IPO_PaymentTransaction", b =>
-                {
-                    b.HasOne("IPOClient.Models.Entities.IPO_GroupMaster", "Group")
-                        .WithMany()
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IPOClient.Models.Entities.IPO_IPOMaster", "Ipo")
-                        .WithMany()
-                        .HasForeignKey("IpoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Group");
-
-                    b.Navigation("Ipo");
                 });
 
             modelBuilder.Entity("IPOClient.Models.Entities.IPO_PlaceOrderChild", b =>
