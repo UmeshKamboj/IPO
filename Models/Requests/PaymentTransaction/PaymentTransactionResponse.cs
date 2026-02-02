@@ -1,4 +1,7 @@
-﻿namespace IPOClient.Models.Requests.PaymentTransaction
+﻿using IPOClient.Models.Entities;
+using IPOClient.Models.Responses;
+
+namespace IPOClient.Models.Requests.PaymentTransaction
 {
     public class PaymentTransactionResponse
     {
@@ -19,5 +22,21 @@
         public DateTime TransactionDate { get; set; }
 
         public bool IsJV { get; set; } = false;
+    }
+    public class PaymentPagedResponse
+    {
+        public PagedResult<IPO_PaymentTransaction> PagedResult { get; set; }
+
+        public decimal TotalCredit { get; set; }
+        public decimal TotalDebit { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+    public class PaymentAccountingResponse
+    {
+        public PagedResult<PaymentTransactionResponse> PagedResult { get; set; }
+
+        public decimal TotalCredit { get; set; }
+        public decimal TotalDebit { get; set; }
+        public decimal TotalAmount { get; set; }
     }
 }

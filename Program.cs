@@ -89,6 +89,8 @@ builder.Services.AddScoped<IClientSetupRepository, ClientSetupRepository>();
 builder.Services.AddScoped<IIPOOrderRemarkRepository, IPOOrderRemarkRepository>();
 builder.Services.AddScoped<IPaymentTransactionRepository, PaymentTransactionRepository>();
 builder.Services.AddScoped<IGroupWiseDashboardRepository, GroupWiseDashboardRepository>();
+builder.Services.AddScoped<IIPOBackupRepository, IPOBackupRepository>();
+builder.Services.AddScoped<IIPOAccountingRepository, IPOAccountingRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IIPOService, IPOService>();
@@ -100,6 +102,8 @@ builder.Services.AddScoped<IIPOOrderRemarkService, IPOOrderRemarkService>();
 builder.Services.AddScoped<IPaymentTransactionService, PaymentTransactionService>();
 builder.Services.AddScoped<IGroupwiseDashboardService, GroupwiseDashboardService>();
 builder.Services.AddScoped<IIPOAllotmentService, IPOAllotmentService>();
+builder.Services.AddScoped<IIPOBackupService, IPOBackupService>();
+builder.Services.AddScoped<IIPOAccountingService, IPOAccountingService>();
 builder.Services.AddScoped<IIPOAnalysisRepository, IPOAnalysisRepository>();
 builder.Services.AddScoped<IIPOAnalysisService, IPOAnalysisService>();
 
