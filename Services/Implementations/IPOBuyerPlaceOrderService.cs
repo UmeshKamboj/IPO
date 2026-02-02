@@ -181,9 +181,9 @@ namespace IPOClient.Services.Implementations
         {
             try
             {
-                var success = await _buyerPlaceOrderRepository.UpdateOrderDetailsAsync(request, modifiedByUserId);
-                if (!success)
-                    return ReturnData.ErrorResponse("Order details not found or inactive", 404);
+                var result = await _buyerPlaceOrderRepository.UpdateOrderDetailsAsync(request, modifiedByUserId);
+                if (result.code==-1)
+                    return ReturnData.ErrorResponse(result.message, 404);
 
                 return ReturnData.SuccessResponse("Order details updated successfully", 200);
             }
