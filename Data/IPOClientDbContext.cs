@@ -27,6 +27,7 @@ namespace IPOClient.Data
         public DbSet<Order_DeletedHistory> Order_DeletedHistory { get; set; }
         public DbSet<OrderChild_DeletedHistory> OrderChild_DeletedHistory { get; set; }
         public DbSet<IPO_PaymentTransaction> PaymentTransactions { get; set; }
+        public DbSet<IPO_Analysis> IPO_Analysis { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -161,6 +162,23 @@ namespace IPOClient.Data
                       .WithMany(h => h.Details)
                       .HasForeignKey(d => d.HistoryId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure IPO_Analysis table
+            modelBuilder.Entity<IPO_Analysis>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.ToTable("IPO_Analysis");
+
+                entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(e => e.IsActive).HasDefaultValue(true);
+
+                entity.HasOne(a => a.IPOMaster)
+                      .WithMany()
+                      .HasForeignKey(a => a.IPOId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(e => new { e.IPOId, e.AnalysisType, e.CompanyId });
             });
         }
     }

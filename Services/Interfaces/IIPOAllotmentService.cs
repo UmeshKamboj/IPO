@@ -23,6 +23,6 @@ namespace IPOClient.Services.Interfaces
         /// <summary>
         /// Firm allotment: mark all order children for an IPO as allotted with their existing quantity
         /// </summary>
-        Task<ApiResponse<BulkAllotmentCheckResponse>> FirmAllotmentAsync(int ipoId, int companyId);
+        Task<ApiResponse<BulkAllotmentCheckResponse>> FirmAllotmentAsync(FirmAllotmentRequest request, int companyId);
     }
 }

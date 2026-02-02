@@ -21,6 +21,10 @@ namespace IPOClient.Services.Implementations
 
                 var flatItems = flatPaged.Items ?? new List<GroupIpoSummaryRow>();
 
+                // Get order billing data for these groups
+                var groupIds = flatItems.Select(x => x.GroupId).Distinct().ToList();
+                var billingData = await _groupwiseDashboardRepository.GetOrderBillingByGroupAsync(groupIds, companyId);
+
                 // IPO HEADERS
                 var ipos = flatItems
                     .Select(x => new { x.IpoId, x.IpoName })
@@ -47,23 +51,35 @@ namespace IPOClient.Services.Implementations
                         foreach (var ipo in ipos)
                         {
                             var cell = g.FirstOrDefault(x => x.IpoId == ipo.IpoId);
+                            var billing = billingData.FirstOrDefault(b =>
+                                b.GroupId == g.Key.GroupId && b.IpoId == ipo.IpoId);
 
                             decimal credit = cell?.Credit ?? 0m;
                             decimal debit = cell?.Debit ?? 0m;
-                            decimal total = credit - debit;
+                            decimal jv = cell?.JV ?? 0m;
+                            decimal billingTotal = billing?.BillingTotal ?? 0m;
+
+                            // Total = order billing net amount
+                            decimal total = billingTotal;
 
                             row.IpoData.Add(new IpoAmount
                             {
                                 IpoId = ipo.IpoId,
                                 IpoName = ipo.IpoName,
                                 Collection = credit,
-                                Due = debit - credit,
+                                Due = total - credit,
                                 Total = total
                             });
 
-                            row.Collection += credit;
-                            row.Due += (debit - credit);
+                            row.JV += jv;
                             row.Total += total;
+                            row.OldCollection += credit;
+                            row.NewCollection += credit;
+                            row.DueAmount += (total - credit);
+
+                            // Backward compatible
+                            row.Collection += credit;
+                            row.Due += (total - credit);
                         }
 
                         return row;
@@ -73,22 +89,33 @@ namespace IPOClient.Services.Implementations
                 // FOOTER
                 var footerIpoTotals = flatItems
                     .GroupBy(x => new { x.IpoId, x.IpoName })
-                    .Select(g => new IpoAmount
+                    .Select(g =>
                     {
-                        IpoId = g.Key.IpoId,
-                        IpoName = g.Key.IpoName,
-                        Collection = g.Sum(x => x.Credit),
-                        Due = g.Sum(x => x.Debit - x.Credit),
-                        Total = g.Sum(x => x.Credit - x.Debit)
+                        var billing = billingData
+                            .Where(b => b.IpoId == g.Key.IpoId)
+                            .Sum(b => b.BillingTotal);
+
+                        return new IpoAmount
+                        {
+                            IpoId = g.Key.IpoId,
+                            IpoName = g.Key.IpoName,
+                            Collection = g.Sum(x => x.Credit),
+                            Total = billing,
+                            Due = billing - g.Sum(x => x.Credit)
+                        };
                     })
                     .ToList();
 
                 var footer = new SummaryFooterDto
                 {
                     IpoTotals = footerIpoTotals,
+                    GrandJV = flatItems.Sum(x => x.JV),
+                    GrandTotal = footerIpoTotals.Sum(x => x.Total),
+                    GrandOldCollection = footerIpoTotals.Sum(x => x.Collection),
+                    GrandNewCollection = footerIpoTotals.Sum(x => x.Collection),
+                    GrandDueAmount = footerIpoTotals.Sum(x => x.Due),
                     GrandCollection = footerIpoTotals.Sum(x => x.Collection),
-                    GrandDue = footerIpoTotals.Sum(x => x.Due),
-                    GrandTotal = footerIpoTotals.Sum(x => x.Total)
+                    GrandDue = footerIpoTotals.Sum(x => x.Due)
                 };
 
                 var grid = new GroupWiseDashboardGridResponse
@@ -110,7 +137,7 @@ namespace IPOClient.Services.Implementations
             {
                 return ReturnData<PagedResult<GroupWiseDashboardGridResponse>>.ErrorResponse($"Error retrieving group wise summary: {ex.Message}", 500);
             }
-            
+
         }
     }
 }
