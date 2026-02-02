@@ -1,5 +1,6 @@
 using IPOClient.Data;
 using IPOClient.Models.Entities;
+using IPOClient.Models.Enums;
 using IPOClient.Models.Requests;
 using IPOClient.Models.Responses;
 using IPOClient.Services.Interfaces;
@@ -224,23 +225,38 @@ namespace IPOClient.Services.Implementations
         }
 
         /// <summary>
-        /// Firm allotment: mark all order children for an IPO as allotted with their order quantity
+        /// Firm allotment: sets AllotedQty for order children filtered by Group and InvestorType
         /// </summary>
-        public async Task<ApiResponse<BulkAllotmentCheckResponse>> FirmAllotmentAsync(int ipoId, int companyId)
+        public async Task<ApiResponse<BulkAllotmentCheckResponse>> FirmAllotmentAsync(FirmAllotmentRequest request, int companyId)
         {
             try
             {
-                var orderChildren = await _dbContext.ChildPlaceOrder
+                var query = _dbContext.ChildPlaceOrder
                     .Include(c => c.IPOOrder)
                         .ThenInclude(o => o.BuyerMaster)
-                    .Where(c => c.IPOOrder.BuyerMaster.IPOId == ipoId
+                    .Where(c => c.IPOOrder.BuyerMaster.IPOId == request.IpoId
+                             && c.GroupId == request.GroupId
                              && c.CompanyId == companyId
-                             && !c.IsDeleted)
-                    .ToListAsync();
+                             && !c.IsDeleted
+                             && !c.IPOOrder.IsDeleted
+                             && !c.IPOOrder.BuyerMaster.IsDeleted);
+
+                // Filter by InvestorType if specified (0 or null = All)
+                if (request.InvestorType.HasValue && request.InvestorType.Value > 0)
+                {
+                    var investorType = request.InvestorType.Value;
+                    // Only Kostak + SubjectTo orders for the selected investor type
+                    query = query.Where(c =>
+                        c.IPOOrder.InvestorType == investorType &&
+                        (c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
+                         c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo));
+                }
+
+                var orderChildren = await query.ToListAsync();
 
                 if (!orderChildren.Any())
                 {
-                    return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for this IPO.");
+                    return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for the selected filters.");
                 }
 
                 var response = new BulkAllotmentCheckResponse
@@ -251,7 +267,7 @@ namespace IPOClient.Services.Implementations
 
                 foreach (var child in orderChildren)
                 {
-                    child.AllotedQty = child.Quantity;
+                    child.AllotedQty = request.AllotedQty;
                     child.ModifiedDate = DateTime.UtcNow;
                     child.ModifiedBy = "FirmAllotment";
                     response.Updated++;
@@ -262,7 +278,7 @@ namespace IPOClient.Services.Implementations
                         POChildId = child.POChildId,
                         PanNumber = child.PANNumber ?? "",
                         Status = "Firm Allotted",
-                        AllottedShares = child.Quantity
+                        AllottedShares = request.AllotedQty
                     });
                 }
 
@@ -270,14 +286,15 @@ namespace IPOClient.Services.Implementations
 
                 await _dbContext.SaveChangesAsync();
 
-                _logger.LogInformation("Firm allotment completed: {Count} records updated for IPO {IpoId}", response.Updated, ipoId);
+                _logger.LogInformation("Firm allotment completed: {Count} records updated for IPO {IpoId}, Group {GroupId}",
+                    response.Updated, request.IpoId, request.GroupId);
 
                 return ApiResponse<BulkAllotmentCheckResponse>.SuccessResponse(response,
                     $"Firm allotment applied to {response.Updated} records.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Firm allotment failed for IPO {IpoId}", ipoId);
+                _logger.LogError(ex, "Firm allotment failed for IPO {IpoId}", request.IpoId);
                 return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("Firm allotment failed", ex.Message);
             }
         }

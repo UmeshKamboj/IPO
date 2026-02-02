@@ -472,7 +472,8 @@ namespace IPOClient.Services.Implementations
                 DematNumber = child.DematNumber ?? "",
                 ApplicationNumber = child.ApplicationNo ?? "",
                 Remark = order.Remarks,
-                PreOpenPrice = child.Group?.IPOMaster?.OpenIPOPrice ?? 0
+                PreOpenPrice = child.Group?.IPOMaster?.OpenIPOPrice ?? 0,
+                Amount = (child.AllotedQty ?? 0) * (child.Group?.IPOMaster?.OpenIPOPrice ?? 0)
             };
 
         }

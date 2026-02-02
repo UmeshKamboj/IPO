@@ -100,6 +100,8 @@ builder.Services.AddScoped<IIPOOrderRemarkService, IPOOrderRemarkService>();
 builder.Services.AddScoped<IPaymentTransactionService, PaymentTransactionService>();
 builder.Services.AddScoped<IGroupwiseDashboardService, GroupwiseDashboardService>();
 builder.Services.AddScoped<IIPOAllotmentService, IPOAllotmentService>();
+builder.Services.AddScoped<IIPOAnalysisRepository, IPOAnalysisRepository>();
+builder.Services.AddScoped<IIPOAnalysisService, IPOAnalysisService>();
 
 // =======================
 // HttpClient for BSE/Registrar scraping

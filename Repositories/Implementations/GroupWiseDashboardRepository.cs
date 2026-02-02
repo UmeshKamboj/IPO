@@ -54,6 +54,20 @@ namespace IPOClient.Repositories.Implementations
                 })
                 .ToListAsync();
 
+            // JV TRANSACTION SUMMARY (IsJVTransaction = true)
+            var jvSummary = await _context.PaymentTransactions
+                .Where(x => x.CompanyId == companyId
+                         && groupIds.Contains(x.GroupId)
+                         && x.IsJVTransaction)
+                .GroupBy(x => new { x.GroupId, x.IpoId })
+                .Select(g => new
+                {
+                    g.Key.GroupId,
+                    g.Key.IpoId,
+                    JV = g.Sum(x => x.Amount)
+                })
+                .ToListAsync();
+
             //  MERGE (ZERO FILL)
             var result = new List<GroupIpoSummaryRow>();
 
@@ -63,6 +77,8 @@ namespace IPOClient.Repositories.Implementations
                 {
                     var match = summary.FirstOrDefault(x =>
                         x.GroupId == g.IPOGroupId && x.IpoId == ipo.Id);
+                    var jvMatch = jvSummary.FirstOrDefault(x =>
+                        x.GroupId == g.IPOGroupId && x.IpoId == ipo.Id);
 
                     result.Add(new GroupIpoSummaryRow
                     {
@@ -71,13 +87,42 @@ namespace IPOClient.Repositories.Implementations
                         IpoId = ipo.Id,
                         IpoName = ipo.IPOName,
                         Debit = match?.Debit ?? 0,
-                        Credit = match?.Credit ?? 0
+                        Credit = match?.Credit ?? 0,
+                        JV = jvMatch?.JV ?? 0
                     });
                 }
             }
 
-            return new PagedResult<GroupIpoSummaryRow>(result,totalGroups, request.Skip,request.PageSize );
+            return new PagedResult<GroupIpoSummaryRow>(result, totalGroups, request.Skip, request.PageSize);
 
+        }
+
+        public async Task<List<GroupIpoBillingRow>> GetOrderBillingByGroupAsync(List<int> groupIds, int companyId)
+        {
+            // Sum order amounts (Quantity × Rate) grouped by Group and IPO
+            // GroupId lives on IPO_PlaceOrderChild, so query through children
+            var rows = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder).ThenInclude(o => o.BuyerMaster)
+                .Where(c =>
+                    c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                    groupIds.Contains(c.GroupId) &&
+                    c.IPOOrder.BuyerMaster.IsActive &&
+                    !c.IPOOrder.BuyerMaster.IsDeleted &&
+                    !c.IPOOrder.IsDeleted &&
+                    !c.IsDeleted)
+                .GroupBy(c => new { c.GroupId, c.IPOOrder.BuyerMaster.IPOId })
+                .Select(g => new GroupIpoBillingRow
+                {
+                    GroupId = g.Key.GroupId,
+                    IpoId = g.Key.IPOId,
+                    BillingTotal = g.Sum(c =>
+                        c.IPOOrder.OrderType == (int)IPOOrderType.BUY
+                            ? c.IPOOrder.Quantity * c.IPOOrder.Rate
+                            : -(c.IPOOrder.Quantity * c.IPOOrder.Rate))
+                })
+                .ToListAsync();
+
+            return rows;
         }
     }
 }

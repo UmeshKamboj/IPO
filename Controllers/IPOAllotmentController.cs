@@ -77,13 +77,17 @@ namespace IPOClient.Controllers
         }
 
         /// <summary>
-        /// Firm allotment - sets AllotedQty = Quantity for all order children of this IPO
+        /// Firm allotment - sets AllotedQty for order children filtered by Group and InvestorType
+        /// InvestorType: 0/null = All, 1 = Retail (Kostak+SubjectTo), 2 = SHNI (Kostak+SubjectTo), 3 = BHNI (Kostak+SubjectTo)
         /// </summary>
-        [HttpPost("firm-allotment/{ipoId}")]
-        public async Task<IActionResult> FirmAllotment(int ipoId)
+        [HttpPost("firm-allotment")]
+        public async Task<IActionResult> FirmAllotment([FromBody] FirmAllotmentRequest request)
         {
+            if (request.IpoId <= 0 || request.GroupId <= 0)
+                return BadRequest(new { Success = false, Message = "IpoId and GroupId are required." });
+
             var companyId = GetCompanyId();
-            var result = await _allotmentService.FirmAllotmentAsync(ipoId, companyId);
+            var result = await _allotmentService.FirmAllotmentAsync(request, companyId);
 
             if (!result.Success)
                 return StatusCode(400, result);
