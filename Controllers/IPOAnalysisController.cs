@@ -1,4 +1,5 @@
 using IPOClient.Models.Requests.IPOMaster.Request;
+using IPOClient.Models.Responses;
 using IPOClient.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -52,7 +53,7 @@ namespace IPOClient.Controllers
                 new { Id = 2, Name = "After Allotment P&L" },
                 new { Id = 3, Name = "After Listing" }
             };
-            return Ok(types);
+            return Ok(ReturnData<object>.SuccessResponse(types));
         }
 
         /// <summary>
