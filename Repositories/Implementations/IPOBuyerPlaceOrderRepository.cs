@@ -169,10 +169,10 @@ namespace IPOClient.Repositories.Implementations
             // Filter by GroupId through child table
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(o => o.OrderChild.Any(c => c.GroupId == request.GroupId.Value));
-            //if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
-            //    query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
-            //if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
-            //    query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
+            if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+                query = query.Where(o => o.OrderCategory == request.OrderCategoryId.Value);
+            if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+                query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
             query = query.OrderByDescending(o => o.BuyerMaster.CreatedDate);
 
             // Total count before pagination
@@ -1036,49 +1036,53 @@ namespace IPOClient.Repositories.Implementations
 
             return string.Join(",", remarkIds);
         }
-        public async Task<bool> BulkOrderUploadAsync(int ipoId, List<string[]> rows, int createdByUserId, int companyId)
+        public async Task<bool> BulkOrderUploadAsync(
+     int ipoId,
+     List<string[]> rows,
+     int createdByUserId,
+     int companyId,
+     int? orderId)
         {
+            IPO_BuyerPlaceOrderMaster? master = null;
+            IPO_BuyerOrder? existingOrder = null;
+
             // =========================
-            // 1️ CREATE MASTER (ONCE)
+            // 1️ CREATE MASTER / LOAD ORDER
             // =========================
-            var master = new IPO_BuyerPlaceOrderMaster
+            if (orderId == null)
             {
-                IPOId = ipoId,
-                CompanyId = companyId,
-                CreatedBy = createdByUserId,
-                CreatedDate = DateTime.UtcNow,
-                IsActive = true,
-                Orders = new List<IPO_BuyerOrder>()
-            };
-            // Cache GroupId lookups
+                master = new IPO_BuyerPlaceOrderMaster
+                {
+                    IPOId = ipoId,
+                    CompanyId = companyId,
+                    CreatedBy = createdByUserId,
+                    CreatedDate = DateTime.UtcNow,
+                    IsActive = true,
+                    Orders = new List<IPO_BuyerOrder>()
+                };
+            }
+            else
+            {
+                existingOrder = await _context.BuyerOrders
+                    .Include(o => o.OrderChild)
+                    .FirstOrDefaultAsync(o =>
+                        o.OrderId == orderId &&
+                        o.CompanyId == companyId);
+
+                if (existingOrder == null)
+                    return false; // invalid orderId
+            }
+
+            if (rows == null || rows.Count == 0)
+                return false;
+
             var groupCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var remarkCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            if( rows == null || rows.Count == 0)
-                return false;
             foreach (var col in rows)
             {
-                /*
-                 CSV Columns
-                 0 GroupName
-                 1 OrderType
-                 2 OrderCategory
-                 3 InvestorType
-                 4 Quantity
-                 5 Rate
-                 6 StrikePrice / Premium / Application
-                 7 OrderDate
-                 8 OrderTime
-                 9 Remark
-                */
+                int groupId = await ResolveGroupIdAsync(col[0], companyId, ipoId, groupCache);
 
-                // =========================
-                // 2️ GROUP RESOLVE (CACHED)
-                // =========================
-                int groupId = await ResolveGroupIdAsync(  col[0], companyId, ipoId,groupCache);
-                // =========================
-                // 3️ ENUM PARSING
-                // =========================
                 int orderType = (int)Enum.Parse<IPOOrderType>(col[1], true);
                 int orderCategory = (int)Enum.Parse<IPOOrderCategory>(col[2], true);
                 int investorType = (int)Enum.Parse<IPOInvestorType>(col[3], true);
@@ -1086,21 +1090,10 @@ namespace IPOClient.Repositories.Implementations
                 int quantity = int.Parse(col[4]);
                 decimal rate = decimal.Parse(col[5]);
 
-                // =========================
-                // 4️ PREMIUM / STRIKE LOGIC
-                // =========================
-                bool applicateRate = false;
-                string? strikePrice = null;
+                string? strikePrice = string.IsNullOrWhiteSpace(col[6]) ? null : col[6];
 
-                if (!string.IsNullOrWhiteSpace(col[6]))
-                {
-                    //if (col[6].Equals("Premium", StringComparison.OrdinalIgnoreCase))
-                    //    applicateRate = true;
-                    //else if (col[6].Equals("Application", StringComparison.OrdinalIgnoreCase))
-                    //    applicateRate = false;
-                    //else
-                    strikePrice = col[6];
-                }
+                var orderDateTime =
+                    DateTime.Parse(col[7]).Date.Add(TimeSpan.Parse(col[8]));
 
                 // =========================
                 // 5️ DATETIME
@@ -1129,33 +1122,84 @@ namespace IPOClient.Repositories.Implementations
                     OrderChild = new List<IPO_PlaceOrderChild>(),
                     OrderSource = (int)OrderSourceType.Upload
                 };
+                string remarkIds = await ResolveRemarkIdsAsync(
+                    col[9], companyId, createdByUserId, ipoId, remarkCache);
 
                 // =========================
-                // 7️ CHILD ROWS
+                // 6️ CREATE OR APPEND
                 // =========================
-                for (int i = 0; i < quantity; i++)
+                if (orderId == null)
                 {
-                    order.OrderChild.Add(new IPO_PlaceOrderChild
+                    var order = new IPO_BuyerOrder
                     {
-                        GroupId = groupId,
-                        Quantity = 1,
+                        OrderType = orderType,
+                        OrderCategory = orderCategory,
+                        InvestorType = investorType,
+                        Quantity = quantity,
+                        Rate = rate,
+                        PremiumStrikePrice = strikePrice,
+                        ApplicateRate = false,
+                        DateTime = orderDateTime,
+                        Remarks = remarkIds,
                         CreatedBy = createdByUserId,
                         CompanyId = companyId,
-                        ChildOrderCreatedDate = DateTime.UtcNow
-                    });
-                }
+                        OrderCreatedDate = DateTime.UtcNow,
+                        OrderChild = new List<IPO_PlaceOrderChild>()
+                    };
 
-                master.Orders.Add(order);
+                    for (int i = 0; i < quantity; i++)
+                    {
+                        order.OrderChild.Add(new IPO_PlaceOrderChild
+                        {
+                            GroupId = groupId,
+                            Quantity = 1,
+                            CreatedBy = createdByUserId,
+                            CompanyId = companyId,
+                            ChildOrderCreatedDate = DateTime.UtcNow
+                        });
+                    }
+
+                    master!.Orders.Add(order);
+                }
+                else
+                {
+                    // Optional safety check
+                    if (existingOrder!.OrderType != orderType ||
+                        existingOrder.OrderCategory != orderCategory ||
+                        existingOrder.InvestorType != investorType)
+                    {
+                        throw new InvalidOperationException(
+                            "CSV order data does not match existing order.");
+                    }
+
+                    for (int i = 0; i < quantity; i++)
+                    {
+                        existingOrder.OrderChild.Add(new IPO_PlaceOrderChild
+                        {
+                            GroupId = groupId,
+                            Quantity = 1,
+                            CreatedBy = createdByUserId,
+                            CompanyId = companyId,
+                            ChildOrderCreatedDate = DateTime.UtcNow
+                        });
+                    }
+
+                    existingOrder.Quantity += quantity;
+                }
             }
+
             // =========================
             // 8️ Save
             // =========================
-            await _dbSet.AddAsync(master);
-            //_context.BuyerPlaceOrderMasters.Add(master);
-            await _context.SaveChangesAsync();
+            if (orderId == null)
+            {
+                await _dbSet.AddAsync(master!);
+            }
 
+            await _context.SaveChangesAsync();
             return true;
         }
+
 
         public async Task<byte[]?> DeletedAllOrderAsync(int ipoId, int userId, int companyId)
         {
@@ -1465,6 +1509,50 @@ namespace IPOClient.Repositories.Implementations
 
             if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
                 query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
+
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                var search = request.SearchValue.Trim().ToLower();
+
+                int? orderTypeMatch = Enum.GetValues(typeof(IPOOrderType))
+                    .Cast<IPOOrderType>()
+                    .Where(e => e.ToString().ToLower().Contains(search))
+                    .Select(e => (int?)e)
+                    .FirstOrDefault();
+
+                int? orderCategoryMatch = Enum.GetValues(typeof(IPOOrderCategory))
+                    .Cast<IPOOrderCategory>()
+                    .Where(e => e.ToString().ToLower().Contains(search))
+                    .Select(e => (int?)e)
+                    .FirstOrDefault();
+
+                int? investorTypeMatch = Enum.GetValues(typeof(IPOInvestorType))
+                    .Cast<IPOInvestorType>()
+                    .Where(e => e.ToString().ToLower().Contains(search))
+                    .Select(e => (int?)e)
+                    .FirstOrDefault();
+
+                query = query.Where(o =>
+                    o.IPOOrder != null && (
+                        (orderTypeMatch.HasValue && o.IPOOrder.OrderType == orderTypeMatch.Value)
+                     || (orderCategoryMatch.HasValue && o.IPOOrder.OrderCategory == orderCategoryMatch.Value)
+                     || (investorTypeMatch.HasValue && o.IPOOrder.InvestorType == investorTypeMatch.Value)
+                     || (o.IPOOrder.PremiumStrikePrice != null &&
+                         o.IPOOrder.PremiumStrikePrice.ToLower().Contains(search))
+                     || (o.IPOOrder.OrderChild.Any(c =>
+                            c.Group != null &&
+                            c.Group.GroupName.ToLower().Contains(search)))
+                    )
+                );
+            }
+
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
+                query = query.Where(c => c.GroupId == request.GroupId.Value); 
+            if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+                query = query.Where(o => o.IPOOrder != null && o.IPOOrder.OrderCategory == request.OrderCategoryId.Value);  
+            if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+                query = query.Where(o => o.IPOOrder != null && o.IPOOrder.InvestorType == request.InvestorTypeId.Value); 
+
             // Get total count before pagination
             var totalCount = await query.CountAsync();
             var pendingPanApplications = await query.CountAsync(c => string.IsNullOrEmpty(c.PANNumber));

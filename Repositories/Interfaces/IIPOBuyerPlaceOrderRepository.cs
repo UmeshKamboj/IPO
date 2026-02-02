@@ -23,7 +23,7 @@ namespace IPOClient.Repositories.Interfaces
 
         Task<bool> DeleteOrderAsync(int orderId, int userId);  //Delete single order
 
-        Task<bool> BulkOrderUploadAsync(int ipoId, List<string[]> rows, int createdByUserId, int companyId);//Bulk Order Upload
+        Task<bool> BulkOrderUploadAsync(int ipoId, List<string[]> rows, int createdByUserId, int companyId, int? orderId);//Bulk Order Upload
 
         Task<byte[]?> DeletedAllOrderAsync(int ipoId, int userId, int companyId); //Delete all order data behlaf of IPO
 

@@ -11,7 +11,7 @@ namespace IPOClient.Repositories.Interfaces
         Task<bool> DeleteAsync(int id, int userId);
         Task<IPO_ClientSetup?> GetByIdAsync(int id, int companyId, bool includeDeleted = false);
         Task<PagedResult<IPO_ClientSetup>> GetClientsWithFiltersAsync(ClientSetupFilterRequest request, int companyId);
-        Task<int> DeleteAllAsync(DeleteAllClientsRequest request, int userId, int companyId);
+        Task<(int HistoryId, List<IPO_ClientSetup> DeletedClients)> DeleteAllAsync(DeleteAllClientsRequest request, int userId, int companyId);
         Task<PagedResult<IPO_ClientDeleteHistory>> GetDeleteHistoryAsync(ClientDeleteHistoryFilterRequest request, int companyId);
         Task<IPO_ClientDeleteHistory?> GetDeleteHistoryByIdAsync(int historyId, int companyId);
     }

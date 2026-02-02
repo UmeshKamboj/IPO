@@ -24,6 +24,9 @@ namespace IPOClient.Models.Requests.ClientSetup
         public int TotalClientsDeleted { get; set; }
         public DateTime DeletedDate { get; set; }
         public string Message { get; set; } = string.Empty;
+        public string? FileBase64 { get; set; }
+        public string? FileName { get; set; }
+        public string? ContentType { get; set; }
     }
 
     public class ClientDeleteHistoryResponse
