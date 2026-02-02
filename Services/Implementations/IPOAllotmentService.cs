@@ -1,5 +1,6 @@
 using IPOClient.Data;
 using IPOClient.Models.Entities;
+using IPOClient.Models.Enums;
 using IPOClient.Models.Requests;
 using IPOClient.Models.Responses;
 using IPOClient.Services.Interfaces;
@@ -23,7 +24,7 @@ namespace IPOClient.Services.Implementations
             _dbContext = dbContext;
         }
 
-        public async Task<ApiResponse<List<IPOAllotmentCompany>>> GetIPOsByRegistrarAsync(string registrar)
+        public async Task<ReturnData<List<IPOAllotmentCompany>>> GetIPOsByRegistrarAsync(string registrar)
         {
             try
             {
@@ -64,27 +65,27 @@ namespace IPOClient.Services.Implementations
                         break;
 
                     default:
-                        return ApiResponse<List<IPOAllotmentCompany>>.ErrorResponse($"Unknown registrar: {registrar}");
+                        return ReturnData<List<IPOAllotmentCompany>>.ErrorResponse($"Unknown registrar: {registrar}");
                 }
 
                 if (ipos.Count > 0)
-                    return ApiResponse<List<IPOAllotmentCompany>>.SuccessResponse(ipos, $"Found {ipos.Count} IPOs from {registrar}");
+                    return ReturnData<List<IPOAllotmentCompany>>.SuccessResponse(ipos, $"Found {ipos.Count} IPOs from {registrar}");
 
-                return ApiResponse<List<IPOAllotmentCompany>>.ErrorResponse($"No IPOs found for registrar: {registrar}. Site may be temporarily unavailable.");
+                return ReturnData<List<IPOAllotmentCompany>>.ErrorResponse($"No IPOs found for registrar: {registrar}. Site may be temporarily unavailable.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching IPOs for registrar {Registrar}", registrar);
-                return ApiResponse<List<IPOAllotmentCompany>>.ErrorResponse("Failed to fetch IPO list", ex.Message);
+                return ReturnData<List<IPOAllotmentCompany>>.ErrorResponse($"Failed to fetch IPO list: {ex.Message}", 500);
             }
         }
 
-        public async Task<ApiResponse<IPOAllotmentResult>> CheckAllotmentAsync(string registrar, string companyCode, string panNumber)
+        public async Task<ReturnData<IPOAllotmentResult>> CheckAllotmentAsync(string registrar, string companyCode, string panNumber)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(panNumber) || panNumber.Length != 10)
-                    return ApiResponse<IPOAllotmentResult>.ErrorResponse("Invalid PAN number. Must be 10 characters.");
+                    return ReturnData<IPOAllotmentResult>.ErrorResponse("Invalid PAN number. Must be 10 characters.");
 
                 IPOAllotmentResult? result = registrar.ToLower() switch
                 {
@@ -96,16 +97,16 @@ namespace IPOClient.Services.Implementations
                 if (result != null)
                 {
                     result.Registrar = registrar;
-                    return ApiResponse<IPOAllotmentResult>.SuccessResponse(result);
+                    return ReturnData<IPOAllotmentResult>.SuccessResponse(result);
                 }
 
-                return ApiResponse<IPOAllotmentResult>.ErrorResponse(
+                return ReturnData<IPOAllotmentResult>.ErrorResponse(
                     $"Allotment check not supported for {registrar} via API. Please check manually on registrar website.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error checking allotment for PAN {PAN}, Company {Company}", panNumber, companyCode);
-                return ApiResponse<IPOAllotmentResult>.ErrorResponse("Allotment check failed", ex.Message);
+                return ReturnData<IPOAllotmentResult>.ErrorResponse($"Allotment check failed: {ex.Message}", 500);
             }
         }
 
@@ -114,7 +115,7 @@ namespace IPOClient.Services.Implementations
         /// <summary>
         /// Bulk allotment check: fetches PANs from order children, checks each against registrar, updates DB
         /// </summary>
-        public async Task<ApiResponse<BulkAllotmentCheckResponse>> BulkAllotmentCheckAsync(BulkAllotmentCheckRequest request, int companyId)
+        public async Task<ReturnData<BulkAllotmentCheckResponse>> BulkAllotmentCheckAsync(BulkAllotmentCheckRequest request, int companyId)
         {
             try
             {
@@ -138,7 +139,7 @@ namespace IPOClient.Services.Implementations
 
                 if (!orderChildren.Any())
                 {
-                    return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("No PAN records found for this IPO.");
+                    return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("No PAN records found for this IPO.");
                 }
 
                 // Get unique PANs to avoid duplicate API calls
@@ -213,34 +214,54 @@ namespace IPOClient.Services.Implementations
                 _logger.LogInformation("Bulk allotment check completed: {Total} PANs, {Allotted} allotted, {Updated} records updated",
                     response.TotalPANs, response.Allotted, response.Updated);
 
-                return ApiResponse<BulkAllotmentCheckResponse>.SuccessResponse(response,
+                return ReturnData<BulkAllotmentCheckResponse>.SuccessResponse(response,
                     $"Processed {response.Processed} PANs. {response.Allotted} allotted, {response.NotAllotted} not allotted, {response.Failed} failed.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Bulk allotment check failed for IPO {IpoId}", request.IpoId);
-                return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("Bulk allotment check failed", ex.Message);
+                return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse($"Bulk allotment check failed: {ex.Message}", 500);
             }
         }
 
         /// <summary>
-        /// Firm allotment: mark all order children for an IPO as allotted with their order quantity
+        /// Firm allotment: sets AllotedQty for order children filtered by Group and InvestorType
         /// </summary>
-        public async Task<ApiResponse<BulkAllotmentCheckResponse>> FirmAllotmentAsync(int ipoId, int companyId)
+        public async Task<ReturnData<BulkAllotmentCheckResponse>> FirmAllotmentAsync(FirmAllotmentRequest request, int companyId)
         {
             try
             {
-                var orderChildren = await _dbContext.ChildPlaceOrder
+                var query = _dbContext.ChildPlaceOrder
                     .Include(c => c.IPOOrder)
                         .ThenInclude(o => o.BuyerMaster)
-                    .Where(c => c.IPOOrder.BuyerMaster.IPOId == ipoId
+                    .Where(c => c.IPOOrder.BuyerMaster.IPOId == request.IpoId
                              && c.CompanyId == companyId
-                             && !c.IsDeleted)
-                    .ToListAsync();
+                             && !c.IsDeleted
+                             && !c.IPOOrder.IsDeleted
+                             && !c.IPOOrder.BuyerMaster.IsDeleted);
+
+                // Filter by GroupId (-1 = All groups)
+                if (request.GroupId > 0)
+                {
+                    query = query.Where(c => c.GroupId == request.GroupId);
+                }
+
+                // Filter by InvestorType (-1 or 0 or null = All)
+                if (request.InvestorType.HasValue && request.InvestorType.Value > 0)
+                {
+                    var investorType = request.InvestorType.Value;
+                    // Only Kostak + SubjectTo orders for the selected investor type
+                    query = query.Where(c =>
+                        c.IPOOrder.InvestorType == investorType &&
+                        (c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
+                         c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo));
+                }
+
+                var orderChildren = await query.ToListAsync();
 
                 if (!orderChildren.Any())
                 {
-                    return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for this IPO.");
+                    return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for the selected filters.");
                 }
 
                 var response = new BulkAllotmentCheckResponse
@@ -251,7 +272,7 @@ namespace IPOClient.Services.Implementations
 
                 foreach (var child in orderChildren)
                 {
-                    child.AllotedQty = child.Quantity;
+                    child.AllotedQty = request.AllotedQty;
                     child.ModifiedDate = DateTime.UtcNow;
                     child.ModifiedBy = "FirmAllotment";
                     response.Updated++;
@@ -262,7 +283,7 @@ namespace IPOClient.Services.Implementations
                         POChildId = child.POChildId,
                         PanNumber = child.PANNumber ?? "",
                         Status = "Firm Allotted",
-                        AllottedShares = child.Quantity
+                        AllottedShares = request.AllotedQty
                     });
                 }
 
@@ -270,15 +291,16 @@ namespace IPOClient.Services.Implementations
 
                 await _dbContext.SaveChangesAsync();
 
-                _logger.LogInformation("Firm allotment completed: {Count} records updated for IPO {IpoId}", response.Updated, ipoId);
+                _logger.LogInformation("Firm allotment completed: {Count} records updated for IPO {IpoId}, Group {GroupId}",
+                    response.Updated, request.IpoId, request.GroupId);
 
-                return ApiResponse<BulkAllotmentCheckResponse>.SuccessResponse(response,
+                return ReturnData<BulkAllotmentCheckResponse>.SuccessResponse(response,
                     $"Firm allotment applied to {response.Updated} records.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Firm allotment failed for IPO {IpoId}", ipoId);
-                return ApiResponse<BulkAllotmentCheckResponse>.ErrorResponse("Firm allotment failed", ex.Message);
+                _logger.LogError(ex, "Firm allotment failed for IPO {IpoId}", request.IpoId);
+                return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse($"Firm allotment failed: {ex.Message}", 500);
             }
         }
 
@@ -463,20 +485,45 @@ namespace IPOClient.Services.Implementations
             try
             {
                 var client = _httpClientFactory.CreateClient("Registrar");
-                var html = await client.GetStringAsync("https://kosmic.kfintech.com/ipostatus/");
 
-                if (html.Contains("moved to a new location", StringComparison.OrdinalIgnoreCase) ||
-                    html.Contains("Request Rejected", StringComparison.OrdinalIgnoreCase))
+                // Try kprism subdomain which sometimes serves full HTML
+                var html = await client.GetStringAsync("https://kprism.kfintech.com/ipostatus/");
+
+                // Check for WAF/bot protection (Imperva TSPD)
+                if (html.Contains("TSPD", StringComparison.OrdinalIgnoreCase) ||
+                    html.Contains("moved to a new location", StringComparison.OrdinalIgnoreCase) ||
+                    html.Contains("Request Rejected", StringComparison.OrdinalIgnoreCase) ||
+                    html.Contains("enable JavaScript", StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogWarning("KFinTech blocks automated requests. User should check at ipostatus.kfintech.com");
+                    // Try targeting the specific company dropdown
+                    var selectPattern = @"<select[^>]*id=""ddl_ipo""[^>]*>(.*?)</select>";
+                    var selectMatch = Regex.Match(html, selectPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+                    if (selectMatch.Success)
+                    {
+                        ipos = ParseDropdownOptions(selectMatch.Value);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("KFinTech WAF blocks automated requests. IPO list unavailable via scraping. Check ipostatus.kfintech.com");
+                    }
+
                     return ipos;
                 }
 
-                ipos = ParseDropdownOptions(html);
+                // If page loaded without WAF, parse company dropdown
+                var ddlPattern = @"<select[^>]*id=""ddl_ipo""[^>]*>(.*?)</select>";
+                var ddlMatch = Regex.Match(html, ddlPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                if (ddlMatch.Success)
+                    ipos = ParseDropdownOptions(ddlMatch.Value);
+                else
+                    ipos = ParseDropdownOptions(html);
+
+                _logger.LogInformation("KFinTech: Found {Count} IPOs", ipos.Count);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "KFinTech site blocked. Check manually at ipostatus.kfintech.com");
+                _logger.LogWarning(ex, "KFinTech site blocked or unavailable. Check manually at ipostatus.kfintech.com");
             }
 
             return ipos;
@@ -493,13 +540,154 @@ namespace IPOClient.Services.Implementations
             => await ScrapeDropdownFromUrlAsync("https://www.skylinerta.com/ipo.php", "Skyline");
 
         private async Task<List<IPOAllotmentCompany>> GetIPOsFromIntegratedAsync()
-            => await ScrapeDropdownFromUrlAsync("https://www.intaborhq.com", "Integrated");
+        {
+            var ipos = new List<IPOAllotmentCompany>();
+            try
+            {
+                var client = _httpClientFactory.CreateClient("Registrar");
+
+                // Company list is loaded via AJAX POST (dropdown is dynamic, not server-rendered)
+                var content = new StringContent("Req=1&Comp=IPO", System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+                var response = await client.PostAsync("https://www.integratedregistry.in/IRMS_V2/RegistrarsToAjax.aspx", content);
+                var html = await response.Content.ReadAsStringAsync();
+
+                if (string.IsNullOrWhiteSpace(html) || html.Contains("NO RECORD", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Integrated: No records returned");
+                    return ipos;
+                }
+
+                // Response is raw HTML options: <option value='AEL'>Avana Electrosystems Limited</option>
+                var optionPattern = @"<option\s+value=['""]?([^'"">\s]+)['""]?[^>]*>([^<]+)</option>";
+                var matches = Regex.Matches(html, optionPattern, RegexOptions.IgnoreCase);
+
+                foreach (Match match in matches)
+                {
+                    var code = match.Groups[1].Value.Trim();
+                    var name = match.Groups[2].Value.Trim();
+
+                    if (string.IsNullOrWhiteSpace(code) || code == "0" ||
+                        name.Contains("select", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("--"))
+                        continue;
+
+                    ipos.Add(new IPOAllotmentCompany
+                    {
+                        CompanyCode = code,
+                        CompanyName = WebUtility.HtmlDecode(name)
+                    });
+                }
+
+                _logger.LogInformation("Integrated: Found {Count} IPOs", ipos.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch IPO list from Integrated Registry");
+            }
+
+            return ipos;
+        }
 
         private async Task<List<IPOAllotmentCompany>> GetIPOsFromMaashitlaAsync()
-            => await ScrapeDropdownFromUrlAsync("https://www.maaborhq.com", "Maashitla");
+        {
+            var ipos = new List<IPOAllotmentCompany>();
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient("Registrar");
+                var json = await client.GetStringAsync("https://microservices.maashitla.com/public-issues-service/companies");
+
+                var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("data", out var dataArr) && dataArr.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var item in dataArr.EnumerateArray())
+                    {
+                        var id = item.TryGetProperty("companyId", out var cidProp) ? cidProp.ToString() :
+                                 item.TryGetProperty("id", out var idProp) ? idProp.ToString() :
+                                 item.TryGetProperty("_id", out var _idProp) ? _idProp.ToString() : "";
+                        var title = item.TryGetProperty("companyTitle", out var ctProp) ? ctProp.GetString() :
+                                    item.TryGetProperty("title", out var titleProp) ? titleProp.GetString() :
+                                    item.TryGetProperty("companyName", out var nameProp) ? nameProp.GetString() : "";
+
+                        if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(title))
+                        {
+                            ipos.Add(new IPOAllotmentCompany
+                            {
+                                CompanyCode = id,
+                                CompanyName = title
+                            });
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Maashitla: Found {Count} IPOs", ipos.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch IPO list from Maashitla");
+            }
+
+            return ipos;
+        }
 
         private async Task<List<IPOAllotmentCompany>> GetIPOsFromCambridgeAsync()
-            => await ScrapeDropdownFromUrlAsync("https://www.caborhq.com", "Cambridge");
+        {
+            var ipos = new List<IPOAllotmentCompany>();
+            try
+            {
+                var client = _httpClientFactory.CreateClient("Registrar");
+                var html = await client.GetStringAsync("https://ipostatus1.cameoindia.com/");
+
+                // Target only the company dropdown (drpCompany), not ddlUserTypes
+                var selectPattern = @"<select[^>]*id=""drpCompany""[^>]*>(.*?)</select>";
+                var selectMatch = Regex.Match(html, selectPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+                if (!selectMatch.Success)
+                {
+                    // Fallback: find the first select that contains "Limited" in options
+                    var allSelects = Regex.Matches(html, @"<select[^>]*>(.*?)</select>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                    foreach (Match s in allSelects)
+                    {
+                        if (s.Value.Contains("Limited", StringComparison.OrdinalIgnoreCase))
+                        {
+                            selectMatch = s;
+                            break;
+                        }
+                    }
+                }
+
+                if (selectMatch.Success)
+                {
+                    var optionPattern = @"<option\s+value=""([^""]+)""[^>]*>([^<]+)</option>";
+                    var matches = Regex.Matches(selectMatch.Value, optionPattern, RegexOptions.IgnoreCase);
+
+                    foreach (Match match in matches)
+                    {
+                        var code = match.Groups[1].Value.Trim();
+                        var name = match.Groups[2].Value.Trim();
+
+                        if (string.IsNullOrWhiteSpace(code) || code == "0" ||
+                            name.Contains("select", StringComparison.OrdinalIgnoreCase) ||
+                            name.Contains("--"))
+                            continue;
+
+                        ipos.Add(new IPOAllotmentCompany
+                        {
+                            CompanyCode = code,
+                            CompanyName = WebUtility.HtmlDecode(name)
+                        });
+                    }
+                }
+
+                _logger.LogInformation("Cambridge/Cameo: Found {Count} IPOs", ipos.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to fetch IPO list from Cambridge/Cameo");
+            }
+
+            return ipos;
+        }
 
         private async Task<List<IPOAllotmentCompany>> ScrapeDropdownFromUrlAsync(string url, string registrarName)
         {

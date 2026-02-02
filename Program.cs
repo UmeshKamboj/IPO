@@ -104,6 +104,8 @@ builder.Services.AddScoped<IGroupwiseDashboardService, GroupwiseDashboardService
 builder.Services.AddScoped<IIPOAllotmentService, IPOAllotmentService>();
 builder.Services.AddScoped<IIPOBackupService, IPOBackupService>();
 builder.Services.AddScoped<IIPOAccountingService, IPOAccountingService>();
+builder.Services.AddScoped<IIPOAnalysisRepository, IPOAnalysisRepository>();
+builder.Services.AddScoped<IIPOAnalysisService, IPOAnalysisService>();
 
 // =======================
 // HttpClient for BSE/Registrar scraping
@@ -119,6 +121,9 @@ builder.Services.AddHttpClient("Registrar", client =>
     client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
     client.DefaultRequestHeaders.Add("Accept", "*/*");
     client.Timeout = TimeSpan.FromSeconds(30);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
 
 // =======================
