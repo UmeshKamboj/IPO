@@ -15,7 +15,7 @@ namespace IPOClient.Repositories.Interfaces
         Task<PagedResult<IPO_BuyerOrder>> GetOrderPagedListAsync(OrderDetailPagedRequest request, int companyId, int ipoId);
         Task<List<IPO_BuyerOrder>> GetOrderListAsync(OrderListRequest request, int companyId, int ipoId);
         Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType);
-        Task<bool> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId); //order child's update
+        Task<(int code, string message)> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId); //order child's update
         Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId);
         Task<PagedResult<IPO_PlaceOrderChild>> GetAllOrderChildrenWithSearchAsync(OrderDetailPagedRequest request, int companyId, int ipoId);
 
