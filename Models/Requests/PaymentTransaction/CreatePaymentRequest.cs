@@ -26,4 +26,23 @@ namespace IPOClient.Models.Requests.PaymentTransaction
 
         public bool IsJV { get; set; } = false;
     }
+    public class PaymentListRequest: PaginationRequest
+    {
+       public int? IpoId { get; set; }
+       public int? GroupId { get; set; }
+        public string? FromDate { get; set; }
+        public string? ToDate { get; set; }
+
+        public DateTime? GetFromDate()
+        {
+            return DateTime.TryParse(FromDate, out var dt) ? dt : (DateTime?)null;
+        }
+
+        public DateTime? GetToDate()
+        {
+            return DateTime.TryParse(ToDate, out var dt) ? dt : (DateTime?)null;
+        }
+
+
+    }
 }
