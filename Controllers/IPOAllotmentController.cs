@@ -1,0 +1,121 @@
+using IPOClient.Models.Requests;
+using IPOClient.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace IPOClient.Controllers
+{
+    [ApiController]
+    [Route("api/allotment")]
+    [Authorize]
+    public class IPOAllotmentController : ControllerBase
+    {
+        private readonly IIPOAllotmentService _allotmentService;
+
+        public IPOAllotmentController(IIPOAllotmentService allotmentService)
+        {
+            _allotmentService = allotmentService;
+        }
+
+        /// <summary>
+        /// Get list of IPOs for a registrar (used to populate IPO Name dropdown)
+        /// </summary>
+        /// <param name="registrar">Registrar name: Linkin, Kfintech, BigShare, Purva, SkyLine, Integrated, Maashitla, Cambridge</param>
+        [HttpGet("ipos/{registrar}")]
+        public async Task<IActionResult> GetIPOsByRegistrar(string registrar)
+        {
+            var result = await _allotmentService.GetIPOsByRegistrarAsync(registrar);
+
+            if (!result.Success)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Check IPO allotment status by PAN number
+        /// </summary>
+        //[HttpPost("check")]
+        //public async Task<IActionResult> CheckAllotment([FromBody] IPOAllotmentCheckRequest request)
+        //{
+        //    if (string.IsNullOrWhiteSpace(request.Registrar) ||
+        //        string.IsNullOrWhiteSpace(request.CompanyCode) ||
+        //        string.IsNullOrWhiteSpace(request.PanNumber))
+        //    {
+        //        return BadRequest(new { Success = false, Message = "Registrar, CompanyCode, and PanNumber are required." });
+        //    }
+
+        //    var result = await _allotmentService.CheckAllotmentAsync(request.Registrar, request.CompanyCode, request.PanNumber);
+
+        //    if (!result.Success)
+        //        return BadRequest(result);
+
+        //    return Ok(result);
+        //}
+
+        /// <summary>
+        /// Bulk allotment check - Submit button in IPO Allotment Check dialog
+        /// Fetches all PANs for the IPO, checks allotment on registrar site, updates DB
+        /// </summary>
+        [HttpPost("check")]
+        public async Task<IActionResult> BulkAllotmentCheck([FromBody] BulkAllotmentCheckRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Registrar) ||
+                string.IsNullOrWhiteSpace(request.CompanyCode) ||
+                request.IpoId <= 0)
+            {
+                return BadRequest(new { Success = false, Message = "Registrar, CompanyCode, and IpoId are required." });
+            }
+
+            var companyId = GetCompanyId();
+            var result = await _allotmentService.BulkAllotmentCheckAsync(request, companyId);
+
+            if (!result.Success)
+                return StatusCode(result.Success ? 200 : 400, result);
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Firm allotment - sets AllotedQty = Quantity for all order children of this IPO
+        /// </summary>
+        [HttpPost("firm-allotment/{ipoId}")]
+        public async Task<IActionResult> FirmAllotment(int ipoId)
+        {
+            var companyId = GetCompanyId();
+            var result = await _allotmentService.FirmAllotmentAsync(ipoId, companyId);
+
+            if (!result.Success)
+                return StatusCode(400, result);
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Get list of supported registrars
+        /// </summary>
+        [HttpGet("registrars")]
+        public IActionResult GetRegistrars()
+        {
+            var registrars = new[]
+            {
+                new { Value = "Linkin", Label = "MUFG Intime (Link Intime)" },
+                new { Value = "Kfintech", Label = "KFin Technologies" },
+                new { Value = "BigShare", Label = "Bigshare Services" },
+                new { Value = "Purva", Label = "Purva Sharegistry" },
+                new { Value = "SkyLine", Label = "Skyline Financial Services" },
+                new { Value = "Integrated", Label = "Integrated Registry" },
+                new { Value = "Maashitla", Label = "Maashitla Securities" },
+                new { Value = "Cambridge", Label = "Cameo Corporate Services" }
+            };
+
+            return Ok(new { Success = true, Data = registrars });
+        }
+
+        private int GetCompanyId()
+        {
+            var companyIdClaim = User.FindFirst("cid")?.Value;
+            return int.TryParse(companyIdClaim, out var companyId) ? companyId : 0;
+        }
+    }
+}

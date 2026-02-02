@@ -72,8 +72,8 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Get clients with pagination and filters
         /// </summary>
-        [HttpGet]
-        public async Task<IActionResult> GetClients([FromQuery] ClientSetupFilterRequest request)
+        [HttpPost("list")]
+        public async Task<IActionResult> GetClients([FromBody] ClientSetupFilterRequest request)
         {
             var companyId = GetCompanyId();
             var result = await _clientSetupService.GetClientsAsync(request, companyId);

@@ -117,14 +117,15 @@ namespace IPOClient.Repositories.Implementations
             return new PagedResult<IPO_ClientSetup>(items, totalCount, request.Skip, request.PageSize);
         }
 
-        public async Task<int> DeleteAllAsync(DeleteAllClientsRequest request, int userId, int companyId)
+        public async Task<(int HistoryId, List<IPO_ClientSetup> DeletedClients)> DeleteAllAsync(DeleteAllClientsRequest request, int userId, int companyId)
         {
             var clients = await _context.Set<IPO_ClientSetup>()
+                .Include(c => c.Group)
                 .Where(c => c.CompanyId == companyId && !c.IsDeleted)
                 .ToListAsync();
 
             if (clients.Count == 0)
-                return 0;
+                return (0, new List<IPO_ClientSetup>());
 
             var deletedDate = DateTime.UtcNow;
 
@@ -164,7 +165,7 @@ namespace IPOClient.Repositories.Implementations
 
             await _context.SaveChangesAsync();
 
-            return history.HistoryId;
+            return (history.HistoryId, clients);
         }
 
         public async Task<PagedResult<IPO_ClientDeleteHistory>> GetDeleteHistoryAsync(ClientDeleteHistoryFilterRequest request, int companyId)
