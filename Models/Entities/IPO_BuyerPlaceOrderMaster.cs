@@ -49,6 +49,8 @@ namespace IPOClient.Models.Entities
 
         public bool IsDeleted { get; set; } = false;
 
+        public int OrderSource { get; set; } = 1; // Source of the order (Manual and Upload)
+
     }
     public class IPO_PlaceOrderChild
     {

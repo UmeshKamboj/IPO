@@ -8,6 +8,7 @@ using IPOClient.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace IPOClient.Repositories.Implementations
@@ -54,7 +55,8 @@ namespace IPOClient.Repositories.Implementations
                     CompanyId = companyId,
                     OrderCreatedDate= DateTime.UtcNow,
                     OrderChild = new List<IPO_PlaceOrderChild>(),
-                    Remarks= request.RemarksIds
+                    Remarks= request.RemarksIds,
+                    OrderSource = (int)OrderSourceType.Manual
                 };
 
                 // split
@@ -371,12 +373,55 @@ namespace IPOClient.Repositories.Implementations
             return result;
         }
 
-        public async Task<bool> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId)
+        public async Task<(int code, string message)> UpdateOrderDetailsAsync(UpdateOrderDetailsListRequest request, int userId)
         {
             if (request == null || request.Orders == null || !request.Orders.Any())
-                return false;
+                return (-1, "Order details not found or inactive");
 
             var poChildIds = request.Orders.Select(x => x.POChildId).ToList();
+
+            // Find all OrderIds for those POChildIds
+            var orderIds = await _context.ChildPlaceOrder
+                .Where(x => poChildIds.Contains(x.POChildId))
+                .Select(x => x.OrderId)
+                .Distinct()
+                .ToListAsync();
+
+
+
+
+            //  Request level PAN duplicate check
+            var duplicatePanInRequest = request.Orders
+                .Where(x => !string.IsNullOrWhiteSpace(x.PANNumber))
+                .GroupBy(x => x.PANNumber.Trim().ToUpper())
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+
+            if (duplicatePanInRequest.Any())
+            {
+                return (-1, $"Duplicate PAN in request: {string.Join(", ", duplicatePanInRequest)}");
+                
+            }
+
+            // Db level PAN duplicate check
+             var panList = request.Orders
+            .Where(x => !string.IsNullOrWhiteSpace(x.PANNumber))
+            .Select(x => x.PANNumber.Trim())
+            .Distinct()
+            .ToList();
+            var duplicatePan = await _context.ChildPlaceOrder
+           .Where(x => panList.Contains(x.PANNumber)
+             && !poChildIds.Contains(x.POChildId) && orderIds.Contains(x.OrderId)) // same record ko ignore
+           .Select(x => x.PANNumber)
+           .FirstOrDefaultAsync();
+
+            if (duplicatePan != null)
+            {
+                return (-1, $"PAN already exists: {duplicatePan}");
+
+            }
+
 
             var POChildOrder = await _context.ChildPlaceOrder
                 .Where(c => poChildIds.Contains(c.POChildId))
@@ -404,7 +449,7 @@ namespace IPOClient.Repositories.Implementations
                 order.ModifiedDate = DateTime.UtcNow;
             }
             await _context.SaveChangesAsync();
-            return true;
+            return (1, "Order details updated successfully");
         }
         public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId)
         {
@@ -1050,6 +1095,33 @@ namespace IPOClient.Repositories.Implementations
                 var orderDateTime =
                     DateTime.Parse(col[7]).Date.Add(TimeSpan.Parse(col[8]));
 
+                // =========================
+                // 5️ DATETIME
+                // =========================
+                var date = DateTime.Parse(col[7]);
+                var time = TimeSpan.Parse(col[8]);
+                var orderDateTime = date.Date.Add(time);
+                string remarkIds = await ResolveRemarkIdsAsync( col[9], companyId,createdByUserId, ipoId,remarkCache);
+                // =========================
+                // 6️ CREATE ORDER
+                // =========================
+                var order = new IPO_BuyerOrder
+                {
+                    OrderType = orderType,
+                    OrderCategory = orderCategory,
+                    InvestorType = investorType,
+                    Quantity = quantity,
+                    Rate = rate,
+                    PremiumStrikePrice = strikePrice,
+                    ApplicateRate = applicateRate,
+                    DateTime = orderDateTime,
+                    Remarks = remarkIds,
+                    CreatedBy = createdByUserId,
+                    CompanyId = companyId,
+                    OrderCreatedDate = DateTime.UtcNow,
+                    OrderChild = new List<IPO_PlaceOrderChild>(),
+                    OrderSource = (int)OrderSourceType.Upload
+                };
                 string remarkIds = await ResolveRemarkIdsAsync(
                     col[9], companyId, createdByUserId, ipoId, remarkCache);
 
@@ -1405,14 +1477,38 @@ namespace IPOClient.Repositories.Implementations
                 .Include(c => c.Group)
                 .AsQueryable();
 
-            query = query.Where(c => c.IPOOrder.OrderId == orderId && c.OrderId==orderId &&
-                c.IPOOrder.BuyerMaster.IsActive &&
+            query = query.Where(c => c.IPOOrder.BuyerMaster.IsActive &&
                 c.IPOOrder.BuyerMaster.CompanyId == companyId &&
                 c.IPOOrder.OrderType == orderType &&
                 c.IPOOrder.BuyerMaster.IPOId == ipoId && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted &&
                 new[] { 1, 2 }.Contains(c.IPOOrder.OrderCategory) &&
                 new[] { 1, 2, 3 }.Contains(c.IPOOrder.InvestorType)
             );
+            if (orderId>0)
+            {
+                query = query.Where(c => c.IPOOrder.OrderId == orderId && c.OrderId == orderId);
+            }
+            // Apply global search filter
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                query = query.Where(c =>
+                    (c.PANNumber != null && c.PANNumber.Contains(request.SearchValue)) ||
+                    (c.ClientName != null && c.ClientName.Contains(request.SearchValue)) ||
+                    (c.DematNumber != null && c.DematNumber.Contains(request.SearchValue)) ||
+                    (c.ApplicationNo != null && c.ApplicationNo.Contains(request.SearchValue))
+                );
+            }
+
+            // Apply group filter on child table directly
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
+                query = query.Where(c => c.GroupId == request.GroupId.Value);
+
+            // Apply category and investor type filters
+            if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+                query = query.Where(c => c.IPOOrder.OrderCategory == request.OrderCategoryId.Value);
+
+            if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+                query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
 
             if (!string.IsNullOrWhiteSpace(request.SearchValue))
             {
