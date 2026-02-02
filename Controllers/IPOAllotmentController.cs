@@ -1,4 +1,5 @@
 using IPOClient.Models.Requests;
+using IPOClient.Models.Responses;
 using IPOClient.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,33 +26,8 @@ namespace IPOClient.Controllers
         public async Task<IActionResult> GetIPOsByRegistrar(string registrar)
         {
             var result = await _allotmentService.GetIPOsByRegistrarAsync(registrar);
-
-            if (!result.Success)
-                return BadRequest(result);
-
-            return Ok(result);
+            return StatusCode(result.ResponseCode ?? 500, result);
         }
-
-        /// <summary>
-        /// Check IPO allotment status by PAN number
-        /// </summary>
-        //[HttpPost("check")]
-        //public async Task<IActionResult> CheckAllotment([FromBody] IPOAllotmentCheckRequest request)
-        //{
-        //    if (string.IsNullOrWhiteSpace(request.Registrar) ||
-        //        string.IsNullOrWhiteSpace(request.CompanyCode) ||
-        //        string.IsNullOrWhiteSpace(request.PanNumber))
-        //    {
-        //        return BadRequest(new { Success = false, Message = "Registrar, CompanyCode, and PanNumber are required." });
-        //    }
-
-        //    var result = await _allotmentService.CheckAllotmentAsync(request.Registrar, request.CompanyCode, request.PanNumber);
-
-        //    if (!result.Success)
-        //        return BadRequest(result);
-
-        //    return Ok(result);
-        //}
 
         /// <summary>
         /// Bulk allotment check - Submit button in IPO Allotment Check dialog
@@ -64,31 +40,27 @@ namespace IPOClient.Controllers
                 string.IsNullOrWhiteSpace(request.CompanyCode) ||
                 request.IpoId <= 0)
             {
-                return BadRequest(new { Success = false, Message = "Registrar, CompanyCode, and IpoId are required." });
+                return BadRequest(ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("Registrar, CompanyCode, and IpoId are required.", 400));
             }
 
             var companyId = GetCompanyId();
             var result = await _allotmentService.BulkAllotmentCheckAsync(request, companyId);
-
-            if (!result.Success)
-                return StatusCode(result.Success ? 200 : 400, result);
-
-            return Ok(result);
+            return StatusCode(result.ResponseCode ?? 500, result);
         }
 
         /// <summary>
-        /// Firm allotment - sets AllotedQty = Quantity for all order children of this IPO
+        /// Firm allotment - sets AllotedQty for order children filtered by Group and InvestorType
+        /// InvestorType: 0/null = All, 1 = Retail (Kostak+SubjectTo), 2 = SHNI (Kostak+SubjectTo), 3 = BHNI (Kostak+SubjectTo)
         /// </summary>
-        [HttpPost("firm-allotment/{ipoId}")]
-        public async Task<IActionResult> FirmAllotment(int ipoId)
+        [HttpPost("firm-allotment")]
+        public async Task<IActionResult> FirmAllotment([FromBody] FirmAllotmentRequest request)
         {
+            if (request.IpoId <= 0)
+                return BadRequest(ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("IpoId is required.", 400));
+
             var companyId = GetCompanyId();
-            var result = await _allotmentService.FirmAllotmentAsync(ipoId, companyId);
-
-            if (!result.Success)
-                return StatusCode(400, result);
-
-            return Ok(result);
+            var result = await _allotmentService.FirmAllotmentAsync(request, companyId);
+            return StatusCode(result.ResponseCode ?? 500, result);
         }
 
         /// <summary>
@@ -109,7 +81,7 @@ namespace IPOClient.Controllers
                 new { Value = "Cambridge", Label = "Cameo Corporate Services" }
             };
 
-            return Ok(new { Success = true, Data = registrars });
+            return Ok(ReturnData<object>.SuccessResponse(registrars));
         }
 
         private int GetCompanyId()

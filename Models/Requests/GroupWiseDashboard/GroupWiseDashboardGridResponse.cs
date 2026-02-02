@@ -18,7 +18,14 @@
 
         public List<IpoAmount> IpoData { get; set; } = new();
 
+        // Right-side summary columns
+        public decimal JV { get; set; }
         public decimal Total { get; set; }
+        public decimal OldCollection { get; set; }
+        public decimal NewCollection { get; set; }
+        public decimal DueAmount { get; set; }
+
+        // Kept for backward compatibility
         public decimal Collection { get; set; }
         public decimal Due { get; set; }
     }
@@ -34,7 +41,11 @@
     public class SummaryFooterDto
     {
         public List<IpoAmount> IpoTotals { get; set; } = new();
+        public decimal GrandJV { get; set; }
         public decimal GrandTotal { get; set; }
+        public decimal GrandOldCollection { get; set; }
+        public decimal GrandNewCollection { get; set; }
+        public decimal GrandDueAmount { get; set; }
         public decimal GrandCollection { get; set; }
         public decimal GrandDue { get; set; }
     }

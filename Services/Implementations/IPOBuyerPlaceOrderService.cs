@@ -74,7 +74,11 @@ namespace IPOClient.Services.Implementations
                         SrNo = index + 1,
                         OrderId= order.OrderId,
                         BuyerMasterId=order.BuyerMaster.BuyerMasterId,
+                        GroupId = groupId,
                         GroupName = group?.GroupName ?? "-",
+                        OrderType = order.OrderType,
+                        OrderCategory = order.OrderCategory,
+                        InvestorType = order.InvestorType,
                         OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                         OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
                         InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
@@ -455,6 +459,11 @@ namespace IPOClient.Services.Implementations
                 BuyerMasterId = master.BuyerMasterId,
 
                 GroupName = child.Group?.GroupName,
+                GroupId = child.GroupId,
+
+                OrderType = order.OrderType,
+                OrderCategory = order.OrderCategory,
+                InvestorType = order.InvestorType,
 
                 OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                 OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
@@ -472,7 +481,8 @@ namespace IPOClient.Services.Implementations
                 DematNumber = child.DematNumber ?? "",
                 ApplicationNumber = child.ApplicationNo ?? "",
                 Remark = order.Remarks,
-                PreOpenPrice = child.Group?.IPOMaster?.OpenIPOPrice ?? 0
+                PreOpenPrice = child.Group?.IPOMaster?.OpenIPOPrice ?? 0,
+                Amount = (child.AllotedQty ?? 0) * (child.Group?.IPOMaster?.OpenIPOPrice ?? 0)
             };
 
         }
@@ -485,7 +495,11 @@ namespace IPOClient.Services.Implementations
                 SrNo = srNo,
                 OrderId = order.OrderId,
                 BuyerMasterId = order.BuyerMaster?.BuyerMasterId ?? 0,
+                GroupId = firstChild?.GroupId ?? 0,
                 GroupName = firstChild?.Group?.GroupName,
+                OrderType = order.OrderType,
+                OrderCategory = order.OrderCategory,
+                InvestorType = order.InvestorType,
                 OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                 OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
                 InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
