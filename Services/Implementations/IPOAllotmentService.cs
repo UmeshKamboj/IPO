@@ -235,13 +235,18 @@ namespace IPOClient.Services.Implementations
                     .Include(c => c.IPOOrder)
                         .ThenInclude(o => o.BuyerMaster)
                     .Where(c => c.IPOOrder.BuyerMaster.IPOId == request.IpoId
-                             && c.GroupId == request.GroupId
                              && c.CompanyId == companyId
                              && !c.IsDeleted
                              && !c.IPOOrder.IsDeleted
                              && !c.IPOOrder.BuyerMaster.IsDeleted);
 
-                // Filter by InvestorType if specified (0 or null = All)
+                // Filter by GroupId (-1 = All groups)
+                if (request.GroupId > 0)
+                {
+                    query = query.Where(c => c.GroupId == request.GroupId);
+                }
+
+                // Filter by InvestorType (-1 or 0 or null = All)
                 if (request.InvestorType.HasValue && request.InvestorType.Value > 0)
                 {
                     var investorType = request.InvestorType.Value;

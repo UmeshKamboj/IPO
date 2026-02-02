@@ -55,8 +55,8 @@ namespace IPOClient.Controllers
         [HttpPost("firm-allotment")]
         public async Task<IActionResult> FirmAllotment([FromBody] FirmAllotmentRequest request)
         {
-            if (request.IpoId <= 0 || request.GroupId <= 0)
-                return BadRequest(ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("IpoId and GroupId are required.", 400));
+            if (request.IpoId <= 0)
+                return BadRequest(ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("IpoId is required.", 400));
 
             var companyId = GetCompanyId();
             var result = await _allotmentService.FirmAllotmentAsync(request, companyId);
