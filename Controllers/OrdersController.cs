@@ -235,7 +235,23 @@ namespace IPOClient.Controllers
                 return BadRequest("Only CSV files are allowed");
             int companyId = GetCompanyId();  
             int userId = GetCurrentUserId();
-            var result = await _ipoBuyerPlaceOrderService.BulkOrderUploadAsync(ipoId,file, userId,companyId);
+            var result = await _ipoBuyerPlaceOrderService.BulkOrderUploadAsync(ipoId,file, userId,companyId,null);
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+        /// <summary>
+        /// Upload IPO bulk orders via CSV
+        /// </summary>
+        [HttpPost("uploadbulk/{orderid}")]
+        public async Task<IActionResult> BulkOrderUploadCsv([FromForm] int ipoId, IFormFile file,int orderid)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("CSV file is required");
+
+            if (!file.FileName.EndsWith(".csv"))
+                return BadRequest("Only CSV files are allowed");
+            int companyId = GetCompanyId();
+            int userId = GetCurrentUserId();
+            var result = await _ipoBuyerPlaceOrderService.BulkOrderUploadAsync(ipoId, file, userId, companyId, orderid);
             return StatusCode(result.ResponseCode ?? 500, result);
         }
         /// <summary>

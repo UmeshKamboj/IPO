@@ -246,7 +246,7 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-        public async Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId)
+        public async Task<ReturnData> BulkOrderUploadAsync(int ipoId, IFormFile file, int createdByUserId, int companyId,int? orderId)
         {
             try
             {
@@ -274,7 +274,7 @@ namespace IPOClient.Services.Implementations
                 if (!rows.Any())
                     return ReturnData.ErrorResponse("CSV file is empty", 400);
 
-                var success = await _buyerPlaceOrderRepository.BulkOrderUploadAsync(ipoId, rows, createdByUserId, companyId);
+                var success = await _buyerPlaceOrderRepository.BulkOrderUploadAsync(ipoId, rows, createdByUserId, companyId, orderId);
                 return success
                     ? ReturnData.SuccessResponse("Bulk order uploaded successfully", 201)
                     : ReturnData.ErrorResponse("Bulk order upload failed", 500);

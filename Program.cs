@@ -95,6 +95,23 @@ builder.Services.AddScoped<IGroupService, GroupService>();
 builder.Services.AddScoped<IIPOBuyerPlaceOrderService, IPOBuyerPlaceOrderService>();
 builder.Services.AddScoped<IClientSetupService, ClientSetupService>();
 builder.Services.AddScoped<IIPOOrderRemarkService, IPOOrderRemarkService>();
+builder.Services.AddScoped<IIPOAllotmentService, IPOAllotmentService>();
+
+// =======================
+// HttpClient for BSE/Registrar scraping
+// =======================
+builder.Services.AddHttpClient("BSE", client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient("Registrar", client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+    client.DefaultRequestHeaders.Add("Accept", "*/*");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 // =======================
 // Background Services
