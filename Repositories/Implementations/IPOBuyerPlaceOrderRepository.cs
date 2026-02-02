@@ -1100,30 +1100,10 @@ namespace IPOClient.Repositories.Implementations
                 // =========================
                 var date = DateTime.Parse(col[7]);
                 var time = TimeSpan.Parse(col[8]);
-                var orderDateTime = date.Date.Add(time);
+               
                 string remarkIds = await ResolveRemarkIdsAsync( col[9], companyId,createdByUserId, ipoId,remarkCache);
                 // =========================
-                // 6️ CREATE ORDER
-                // =========================
-                var order = new IPO_BuyerOrder
-                {
-                    OrderType = orderType,
-                    OrderCategory = orderCategory,
-                    InvestorType = investorType,
-                    Quantity = quantity,
-                    Rate = rate,
-                    PremiumStrikePrice = strikePrice,
-                    ApplicateRate = applicateRate,
-                    DateTime = orderDateTime,
-                    Remarks = remarkIds,
-                    CreatedBy = createdByUserId,
-                    CompanyId = companyId,
-                    OrderCreatedDate = DateTime.UtcNow,
-                    OrderChild = new List<IPO_PlaceOrderChild>(),
-                    OrderSource = (int)OrderSourceType.Upload
-                };
-                string remarkIds = await ResolveRemarkIdsAsync(
-                    col[9], companyId, createdByUserId, ipoId, remarkCache);
+                
 
                 // =========================
                 // 6️ CREATE OR APPEND
