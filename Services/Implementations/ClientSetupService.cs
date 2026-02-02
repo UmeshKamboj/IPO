@@ -1,3 +1,4 @@
+using System.Text;
 using IPOClient.Models.Entities;
 using IPOClient.Models.Requests.ClientSetup;
 using IPOClient.Models.Responses;
@@ -109,19 +110,33 @@ namespace IPOClient.Services.Implementations
         {
             try
             {
-                var historyId = await _clientSetupRepository.DeleteAllAsync(request, userId, companyId);
+                var (historyId, deletedClients) = await _clientSetupRepository.DeleteAllAsync(request, userId, companyId);
 
                 if (historyId == 0)
                     return ReturnData<DeleteAllClientsResponse>.ErrorResponse("No clients found to delete", 404);
 
                 var history = await _clientSetupRepository.GetDeleteHistoryByIdAsync(historyId, companyId);
 
+                // Generate CSV
+                var sb = new StringBuilder();
+                sb.AppendLine("PANNumber,Name,Group,ClientDPId");
+                foreach (var c in deletedClients)
+                {
+                    sb.AppendLine($"{c.PANNumber},{c.Name},{c.Group?.GroupName ?? ""},{c.ClientDPId ?? ""}");
+                }
+                var csvBytes = Encoding.UTF8.GetBytes(sb.ToString());
+                var fileBase64 = Convert.ToBase64String(csvBytes);
+                var fileName = $"DeletedClients_{DateTime.Now:yyyyMMddHHmm}.csv";
+
                 var response = new DeleteAllClientsResponse
                 {
                     HistoryId = historyId,
                     TotalClientsDeleted = history?.TotalClientsDeleted ?? 0,
                     DeletedDate = history?.DeletedDate ?? DateTime.UtcNow,
-                    Message = $"Successfully deleted {history?.TotalClientsDeleted ?? 0} clients"
+                    Message = $"Successfully deleted {history?.TotalClientsDeleted ?? 0} clients",
+                    FileBase64 = fileBase64,
+                    FileName = fileName,
+                    ContentType = "text/csv"
                 };
 
                 return ReturnData<DeleteAllClientsResponse>.SuccessResponse(response, "All clients deleted successfully", 200);
