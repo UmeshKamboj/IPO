@@ -1,4 +1,5 @@
 ﻿using Azure;
+using ClosedXML.Excel;
 using IPOClient.Models.Entities;
 using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Request;
@@ -7,6 +8,8 @@ using IPOClient.Models.Responses;
 using IPOClient.Repositories.Implementations;
 using IPOClient.Repositories.Interfaces;
 using IPOClient.Services.Interfaces;
+using iTextSharp.text;
+using iTextSharp.text.pdf;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.VisualBasic.FileIO;
 using System.IO.Compression;
@@ -400,27 +403,113 @@ namespace IPOClient.Services.Implementations
             }
 
         }
-        public async Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        public async Task<ReturnData<ClientWiseBillingResponse>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
         {
             try
             {
+                // Get IPO master for summary data
+                var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+
+                // Get total billing for all filtered items (not just current page)
+                var total = await _buyerPlaceOrderRepository.GetClientWiseBillingTotalAsync(request, companyId, ipoId);
+
                 var pagedResult = await _buyerPlaceOrderRepository.GetClientWisePagedListAsync(request, companyId, ipoId);
+
+                // Pass ipoMaster data to mapping function for accurate Amount calculation
+                var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+                var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
 
                 var responses = pagedResult.Items?
                     .Select((order, index) => MapToOrderDetailResponse(
                         order,
-                        srNo: request.Skip + index + 1
+                        srNo: request.Skip + index + 1,
+                        ipoPrice: ipoPrice,
+                        ipoPreOpenPrice: ipoPreOpenPrice
                     ))
                     .ToList() ?? new List<BuyerOrderResponse>();
 
-                var result = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize);
-                return ReturnData<PagedResult<BuyerOrderResponse>>.SuccessResponse(result, "Client wise billing retrieved successfully", 200);
+                var pagedData = new PagedResult<BuyerOrderResponse>(responses, pagedResult.TotalCount, request.Skip, request.PageSize);
+
+                var result = new ClientWiseBillingResponse
+                {
+                    Total = total,
+                    IPOPrice = ipoPrice,
+                    PreOpenPrice = ipoPreOpenPrice,
+                    Data = pagedData
+                };
+
+                return ReturnData<ClientWiseBillingResponse>.SuccessResponse(result, "Client wise billing retrieved successfully", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
+                return ReturnData<ClientWiseBillingResponse>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
             }
         }
+
+        public async Task<ReturnData> UpdatePreOpenPriceAsync(UpdatePreOpenPriceRequest request, int companyId, int userId)
+        {
+            try
+            {
+                // Priority: POChildId > OrderId > IPOId (all orders)
+                if (request.POChildId.HasValue&& request.POChildId.Value>0)
+                {
+                    // Update single child order's PreOpenPrice
+                    var updated = await _buyerPlaceOrderRepository.UpdateChildPreOpenPriceAsync(request.POChildId.Value, request.PreOpenPrice, companyId, userId);
+                    if (!updated)
+                        return ReturnData.ErrorResponse("Child order not found or update failed", 404);
+
+                    return ReturnData.SuccessResponse("PreOpen Price updated for selected item", 200);
+                }
+                //else if (request.OrderId.HasValue && request.OrderId.Value > 0)
+                //{
+                //    // Update all children of a specific order
+                //    var count = await _buyerPlaceOrderRepository.UpdateOrderChildrenPreOpenPriceAsync(request.OrderId.Value, request.PreOpenPrice, companyId, userId);
+                //    if (count == 0)
+                //        return ReturnData.ErrorResponse("Order not found or no children to update", 404);
+
+                //    return ReturnData.SuccessResponse($"PreOpen Price updated for {count} children of order", 200);
+                //}
+                else
+                {
+                    // Update IPO Master PreOpen Price AND all child orders
+                    var ipoUpdated = await _ipoRepository.UpdatePreOpenPriceAsync(request.IPOId??0, request.PreOpenPrice, companyId, userId);
+                    if (!ipoUpdated)
+                        return ReturnData.ErrorResponse("IPO not found or update failed", 404);
+
+                    // Also update all child orders for this IPO
+                    var count = await _buyerPlaceOrderRepository.UpdateAllChildrenPreOpenPriceAsync(request.IPOId??0, request.PreOpenPrice, companyId, userId);
+
+                    return ReturnData.SuccessResponse($"PreOpen Price updated for all {count} orders", 200);
+                }
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error updating PreOpen Price: {ex.Message}", 500);
+            }
+        }
+
+        public async Task<ReturnData> SyncChildrenPreOpenPriceFromParentAsync(int ipoId, int companyId, int userId)
+        {
+            try
+            {
+                // Get IPO's PreOpenPrice
+                var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                if (ipoMaster == null)
+                    return ReturnData.ErrorResponse("IPO not found", 404);
+
+                var preOpenPrice = ipoMaster.OpenIPOPrice ?? 0;
+
+                // Update all child orders that have PreOpenPrice = 0
+                var count = await _buyerPlaceOrderRepository.SyncChildrenPreOpenPriceFromParentAsync(ipoId, preOpenPrice, companyId, userId);
+
+                return ReturnData.SuccessResponse($"Synced PreOpenPrice ({preOpenPrice}) for {count} child orders", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error syncing PreOpen Price: {ex.Message}", 500);
+            }
+        }
+
         // MAP ENTITY TO RESPONSE DTO
         private BuyerPlaceOrderResponse MapToIPOResponse(IPO_BuyerPlaceOrderMaster buyer)
         {
@@ -446,10 +535,22 @@ namespace IPOClient.Services.Implementations
 
         }
 
-        private BuyerOrderResponse MapToOrderDetailResponse(IPO_PlaceOrderChild child, int srNo)
+        private BuyerOrderResponse MapToOrderDetailResponse(IPO_PlaceOrderChild child, int srNo, decimal? ipoPrice = null, decimal? ipoPreOpenPrice = null)
         {
             var order = child.IPOOrder;
             var master = order.BuyerMaster;
+
+            // Get PreOpenPrice: Use child's PreOpenPrice, fallback to parent's (passed in) if child has 0
+            var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : (ipoPreOpenPrice ?? child.Group?.IPOMaster?.OpenIPOPrice ?? 0);
+            // Get IPOPrice (Upper Price Band) - use passed in value or fallback to Group.IPOMaster
+            var ipoPriceFinal = ipoPrice ?? child.Group?.IPOMaster?.IPO_Upper_Price_Band ?? 0;
+            // Get Rate from order
+            var rate = order.Rate;
+            // Get AllotedQty
+            var allotedQty = child.AllotedQty ?? 0;
+
+            // New Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+            var amount = (preOpenPrice - ipoPriceFinal) * allotedQty - rate;
 
             return new BuyerOrderResponse
             {
@@ -477,12 +578,12 @@ namespace IPOClient.Services.Implementations
                 // SUB-CHILD FIELDS
                 PanNumber = child.PANNumber ?? "",
                 ClientName = child.ClientName ?? "",
-                AllotedQty = child.AllotedQty ?? 0,
+                AllotedQty = allotedQty,
                 DematNumber = child.DematNumber ?? "",
                 ApplicationNumber = child.ApplicationNo ?? "",
                 Remark = order.Remarks,
-                PreOpenPrice = child.Group?.IPOMaster?.OpenIPOPrice ?? 0,
-                Amount = (child.AllotedQty ?? 0) * (child.Group?.IPOMaster?.OpenIPOPrice ?? 0)
+                PreOpenPrice = preOpenPrice,
+                Amount = amount
             };
 
         }
@@ -614,10 +715,15 @@ namespace IPOClient.Services.Implementations
 
             return response;
         }
-        public async Task<ReturnData<PagedResult<GroupWiseBillingResponse>>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId)
+        public async Task<ReturnData<GroupWiseBillingPagedResponse>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId)
         {
             try
             {
+                // Get IPO master for pricing data
+                var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+                var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
                 var data = await _buyerPlaceOrderRepository.GetGroupWiseBillingListAsync(request, companyId, ipoId);
                 var groupedResult = new List<GroupWiseBillingResponse>();
 
@@ -627,31 +733,48 @@ namespace IPOClient.Services.Implementations
 
                     var res = new GroupWiseBillingResponse
                     {
-                        GroupName = first.Group?.GroupName ?? "-"
+                        GroupId = first.GroupId,
+                        GroupName = first.Group?.GroupName ?? "-",
+                        TallyStatus = first.Group?.TallyStatus ?? false
                     };
 
                     foreach (var row in grp)
                     {
                         var order = row.IPOOrder;
 
-                        var qty = order.OrderType == (int)IPOOrderType.BUY
-                                    ? row.Quantity
-                                    : -row.Quantity;
+                        // Get AllotedQty (use 0 if null)
+                        var allotedQty = row.AllotedQty ?? 0;
 
-                        var amount = qty * order.Rate;
+                        // Get PreOpenPrice: Use child's PreOpenPrice, fallback to IPO's if child has 0
+                        var preOpenPrice = row.PreOpenPrice > 0 ? row.PreOpenPrice : ipoPreOpenPrice;
+
+                        // Get Rate from order
+                        var rate = order.Rate;
+
+                        // New Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+                        // For SELL orders, negate the amount
+                        var amount = (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        if (order.OrderType == (int)IPOOrderType.SELL)
+                            amount = -amount;
+
+                        // Count = number of child rows (+1 for BUY, -1 for SELL)
+                        var countDelta = order.OrderType == (int)IPOOrderType.BUY ? 1 : -1;
+
+                        // Alloted = sum of AllotedQty (positive for BUY, negative for SELL)
+                        var allotedDelta = order.OrderType == (int)IPOOrderType.BUY ? allotedQty : -allotedQty;
 
                         // ===== KOSTAK
                         if (order.OrderCategory == (int)IPOOrderCategory.Kostak)
-                            FillRetailSHNI(order, res, qty, amount);
+                            FillRetailSHNI(order, res, countDelta, allotedDelta, amount);
 
                         // ===== SUBJECT TO
                         if (order.OrderCategory == (int)IPOOrderCategory.SubjectTo)
-                            FillSubjectTo(order, res, qty, amount);
+                            FillSubjectTo(order, res, countDelta, allotedDelta, amount);
 
                         // ===== PREMIUM
                         if (order.OrderCategory == (int)IPOOrderCategory.Premium)
                         {
-                            res.Premium.Shares += qty;
+                            res.Premium.Shares += allotedDelta;
                             res.Premium.Billing += amount;
                         }
 
@@ -666,7 +789,7 @@ namespace IPOClient.Services.Implementations
                                 res.Options.PutAmount += amount;
                         }
 
-                        res.TotalShares += qty;
+                        res.TotalShares += allotedDelta;
                         res.TotalAmount += amount;
                     }
 
@@ -689,25 +812,36 @@ namespace IPOClient.Services.Implementations
                     request.Skip,
                     request.PageSize);
 
-                return ReturnData<PagedResult<GroupWiseBillingResponse>>.SuccessResponse(pagedResult, "Group wise billing retrieved", 200);
+                // Calculate AllTallyStatusTrue: true if all groups have TallyStatus = true
+                var allTallyStatusTrue = groupedResult.Count > 0 && groupedResult.All(x => x.TallyStatus);
+
+                var response = new GroupWiseBillingPagedResponse
+                {
+                    PagedResult = pagedResult,
+                    AllTallyStatusTrue = allTallyStatusTrue
+                };
+
+                return ReturnData<GroupWiseBillingPagedResponse>.SuccessResponse(response, "Group wise billing retrieved", 200);
             }
             catch (Exception ex)
             {
-                return ReturnData<PagedResult<GroupWiseBillingResponse>>.ErrorResponse($"Error: {ex.Message}", 500);
+                return ReturnData<GroupWiseBillingPagedResponse>.ErrorResponse($"Error: {ex.Message}", 500);
             }
         }
-        private static void FillRetailSHNI(IPO_BuyerOrder order, GroupWiseBillingResponse res, int qty, decimal amount)
+        private static void FillRetailSHNI(IPO_BuyerOrder order, GroupWiseBillingResponse res, int countDelta, int allotedDelta, decimal amount)
         {
             var target = order.InvestorType switch
             {
                 (int)IPOInvestorType.Retail => res.Retail,
                 (int)IPOInvestorType.SHNI => res.SHNI,
                 _ => res.BHNI
-            }; target.Count += qty;
+            };
+            target.Count += countDelta;
+            target.Alloted += allotedDelta;
             target.Billing += amount;
         }
 
-        private static void FillSubjectTo(IPO_BuyerOrder order, GroupWiseBillingResponse res, int qty, decimal amount)
+        private static void FillSubjectTo(IPO_BuyerOrder order, GroupWiseBillingResponse res, int countDelta, int allotedDelta, decimal amount)
         {
             var target = order.InvestorType switch
             {
@@ -716,7 +850,8 @@ namespace IPOClient.Services.Implementations
                 _ => res.SubjectTo_BHNI
             };
 
-            target.Count += qty;
+            target.Count += countDelta;
+            target.Alloted += allotedDelta;
             target.Billing += amount;
         }
         private static bool IsGroupAllZero(GroupWiseBillingResponse r)
@@ -773,5 +908,323 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<PagedResult<BuyerOrderResponse>>.ErrorResponse($"Error retrieving order details: {ex.Message}", 500);
             }
         }
+
+        #region Download Methods
+
+        public async Task<ReturnData<FileResponse>> DownloadGroupWiseBillingExcelAsync(GroupWiseBillingRequest request, int companyId, int ipoId)
+        {
+            try
+            {
+                // Get IPO master for pricing and name
+                var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+                var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+                var data = await _buyerPlaceOrderRepository.GetGroupWiseBillingListAsync(request, companyId, ipoId);
+                var groupedResult = new List<GroupWiseBillingResponse>();
+
+                foreach (var grp in data.GroupBy(x => x.GroupId))
+                {
+                    var first = grp.First();
+                    var res = new GroupWiseBillingResponse
+                    {
+                        GroupName = first.Group?.GroupName ?? "-",
+                        TallyStatus = first.Group?.TallyStatus ?? false
+                    };
+
+                    foreach (var row in grp)
+                    {
+                        var order = row.IPOOrder;
+                        var allotedQty = row.AllotedQty ?? 0;
+                        var preOpenPrice = row.PreOpenPrice > 0 ? row.PreOpenPrice : ipoPreOpenPrice;
+                        var rate = order.Rate;
+                        var amount = (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        if (order.OrderType == (int)IPOOrderType.SELL)
+                            amount = -amount;
+
+                        var countDelta = order.OrderType == (int)IPOOrderType.BUY ? 1 : -1;
+                        var allotedDelta = order.OrderType == (int)IPOOrderType.BUY ? allotedQty : -allotedQty;
+
+                        if (order.OrderCategory == (int)IPOOrderCategory.Kostak)
+                            FillRetailSHNI(order, res, countDelta, allotedDelta, amount);
+                        if (order.OrderCategory == (int)IPOOrderCategory.SubjectTo)
+                            FillSubjectTo(order, res, countDelta, allotedDelta, amount);
+                        if (order.OrderCategory == (int)IPOOrderCategory.Premium)
+                        {
+                            res.Premium.Shares += (int)allotedDelta;
+                            res.Premium.Billing += amount;
+                        }
+                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice) &&
+                            order.PremiumStrikePrice != "Application" &&
+                            order.PremiumStrikePrice != "Premium")
+                        {
+                            if (order.OrderType == (int)IPOOrderType.BUY)
+                                res.Options.CallAmount += amount;
+                            else
+                                res.Options.PutAmount += amount;
+                        }
+                        res.TotalShares += (int)allotedDelta;
+                        res.TotalAmount += amount;
+                    }
+
+                    if (!IsGroupAllZero(res))
+                        groupedResult.Add(res);
+                }
+
+                // Create Excel
+                using var workbook = new XLWorkbook();
+                var worksheet = workbook.Worksheets.Add("Group Wise Billing");
+
+                // Headers
+                var headers = new[] { "Tally", "Group Name",
+                    "Retail Count", "Retail Alloted", "Retail Billing",
+                    "SHNI Count", "SHNI Alloted", "SHNI Billing",
+                    "BHNI Count", "BHNI Alloted", "BHNI Billing",
+                    "SubjectTo Retail Count", "SubjectTo Retail Alloted", "SubjectTo Retail Billing",
+                    "SubjectTo SHNI Count", "SubjectTo SHNI Alloted", "SubjectTo SHNI Billing",
+                    "SubjectTo BHNI Count", "SubjectTo BHNI Alloted", "SubjectTo BHNI Billing",
+                    "Premium Shares", "Premium Billing",
+                    "Options Call", "Options Put",
+                    "Total Shares", "Total Amount" };
+
+                for (int i = 0; i < headers.Length; i++)
+                {
+                    worksheet.Cell(1, i + 1).Value = headers[i];
+                    worksheet.Cell(1, i + 1).Style.Font.Bold = true;
+                    worksheet.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightBlue;
+                }
+
+                // Data rows
+                int rows = 2;
+                foreach (var item in groupedResult)
+                {
+                    worksheet.Cell(rows, 1).Value = item.TallyStatus ? "Yes" : "No";
+                    worksheet.Cell(rows, 2).Value = item.GroupName;
+                    worksheet.Cell(rows, 3).Value = item.Retail.Count;
+                    worksheet.Cell(rows, 4).Value = item.Retail.Alloted;
+                    worksheet.Cell(rows, 5).Value = item.Retail.Billing;
+                    worksheet.Cell(rows, 6).Value = item.SHNI.Count;
+                    worksheet.Cell(rows, 7).Value = item.SHNI.Alloted;
+                    worksheet.Cell(rows, 8).Value = item.SHNI.Billing;
+                    worksheet.Cell(rows, 9).Value = item.BHNI.Count;
+                    worksheet.Cell(rows, 10).Value = item.BHNI.Alloted;
+                    worksheet.Cell(rows, 11).Value = item.BHNI.Billing;
+                    worksheet.Cell(rows, 12).Value = item.SubjectTo_Retail.Count;
+                    worksheet.Cell(rows, 13).Value = item.SubjectTo_Retail.Alloted;
+                    worksheet.Cell(rows, 14).Value = item.SubjectTo_Retail.Billing;
+                    worksheet.Cell(rows, 15).Value = item.SubjectTo_SHNI.Count;
+                    worksheet.Cell(rows, 16).Value = item.SubjectTo_SHNI.Alloted;
+                    worksheet.Cell(rows, 17).Value = item.SubjectTo_SHNI.Billing;
+                    worksheet.Cell(rows, 18).Value = item.SubjectTo_BHNI.Count;
+                    worksheet.Cell(rows, 19).Value = item.SubjectTo_BHNI.Alloted;
+                    worksheet.Cell(rows, 20).Value = item.SubjectTo_BHNI.Billing;
+                    worksheet.Cell(rows, 21).Value = item.Premium.Shares;
+                    worksheet.Cell(rows, 22).Value = item.Premium.Billing;
+                    worksheet.Cell(rows, 23).Value = item.Options.CallAmount;
+                    worksheet.Cell(rows, 24).Value = item.Options.PutAmount;
+                    worksheet.Cell(rows, 25).Value = item.TotalShares;
+                    worksheet.Cell(rows, 26).Value = item.TotalAmount;
+                    rows++;
+                }
+
+                worksheet.Columns().AdjustToContents();
+
+                using var ms = new MemoryStream();
+                workbook.SaveAs(ms);
+                ms.Position = 0;
+
+                var fileResponse = new FileResponse
+                {
+                    Bytes = ms.ToArray(),
+                    ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    FileName = $"{ipoMaster?.IPOName ?? "IPO"}-GroupWiseBilling.xlsx"
+                };
+
+                return ReturnData<FileResponse>.SuccessResponse(fileResponse, "Excel file generated", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<FileResponse>.ErrorResponse($"Error generating Excel: {ex.Message}", 500);
+            }
+        }
+
+        public async Task<ReturnData<FileResponse>> DownloadClientWiseBillingExcelAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        {
+            try
+            {
+                var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+                var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+                // Get all data without pagination
+                var allRequest = new OrderDetailFilterRequest
+                {
+                    SearchValue = request.SearchValue,
+                    GroupId = request.GroupId,
+                    OrderCategoryId = request.OrderCategoryId,
+                    InvestorTypeId = request.InvestorTypeId,
+                    Skip = 0,
+                    PageSize = int.MaxValue
+                };
+
+                var pagedResult = await _buyerPlaceOrderRepository.GetClientWisePagedListAsync(allRequest, companyId, ipoId);
+
+                using var workbook = new XLWorkbook();
+                var worksheet = workbook.Worksheets.Add("Client Wise Billing");
+
+                // Headers
+                var headers = new[] { "Sr.No", "Group Name", "Order Type", "Category", "Investor Type",
+                    "PAN Number", "Client Name", "Alloted Qty", "Demat Number", "Application No",
+                    "Rate", "PreOpen Price", "Amount", "Remark" };
+
+                for (int i = 0; i < headers.Length; i++)
+                {
+                    worksheet.Cell(1, i + 1).Value = headers[i];
+                    worksheet.Cell(1, i + 1).Style.Font.Bold = true;
+                    worksheet.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightBlue;
+                }
+
+                // Data rows
+                int row = 2;
+                int srNo = 1;
+                foreach (var child in pagedResult.Items ?? new List<IPO_PlaceOrderChild>())
+                {
+                    var order = child.IPOOrder;
+                    var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
+                    var allotedQty = child.AllotedQty ?? 0;
+                    var amount = (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+
+                    worksheet.Cell(row, 1).Value = srNo++;
+                    worksheet.Cell(row, 2).Value = child.Group?.GroupName ?? "-";
+                    worksheet.Cell(row, 3).Value = ((IPOOrderType)order.OrderType).ToString();
+                    worksheet.Cell(row, 4).Value = ((IPOOrderCategory)order.OrderCategory).ToString();
+                    worksheet.Cell(row, 5).Value = ((IPOInvestorType)order.InvestorType).ToString();
+                    worksheet.Cell(row, 6).Value = child.PANNumber ?? "";
+                    worksheet.Cell(row, 7).Value = child.ClientName ?? "";
+                    worksheet.Cell(row, 8).Value = allotedQty;
+                    worksheet.Cell(row, 9).Value = child.DematNumber ?? "";
+                    worksheet.Cell(row, 10).Value = child.ApplicationNo ?? "";
+                    worksheet.Cell(row, 11).Value = order.Rate;
+                    worksheet.Cell(row, 12).Value = preOpenPrice;
+                    worksheet.Cell(row, 13).Value = amount;
+                    worksheet.Cell(row, 14).Value = order.Remarks ?? "";
+                    row++;
+                }
+
+                worksheet.Columns().AdjustToContents();
+
+                using var ms = new MemoryStream();
+                workbook.SaveAs(ms);
+                ms.Position = 0;
+
+                var fileResponse = new FileResponse
+                {
+                    Bytes = ms.ToArray(),
+                    ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    FileName = $"{ipoMaster?.IPOName ?? "IPO"}-ClientWiseBilling.xlsx"
+                };
+
+                return ReturnData<FileResponse>.SuccessResponse(fileResponse, "Excel file generated", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<FileResponse>.ErrorResponse($"Error generating Excel: {ex.Message}", 500);
+            }
+        }
+
+        public async Task<ReturnData<FileResponse>> DownloadClientWiseBillingPdfAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        {
+            try
+            {
+                var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+                var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+                // Get all data without pagination
+                var allRequest = new OrderDetailFilterRequest
+                {
+                    SearchValue = request.SearchValue,
+                    GroupId = request.GroupId,
+                    OrderCategoryId = request.OrderCategoryId,
+                    InvestorTypeId = request.InvestorTypeId,
+                    Skip = 0,
+                    PageSize = int.MaxValue
+                };
+
+                var pagedResult = await _buyerPlaceOrderRepository.GetClientWisePagedListAsync(allRequest, companyId, ipoId);
+
+                using var ms = new MemoryStream();
+                var document = new Document(PageSize.A4.Rotate(), 10, 10, 10, 10);
+                var writer = PdfWriter.GetInstance(document, ms);
+                document.Open();
+
+                // Title
+                var titleFont = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 16);
+                var headerFont = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 8);
+                var cellFont = FontFactory.GetFont(FontFactory.HELVETICA, 7);
+
+                document.Add(new Paragraph($"{ipoMaster?.IPOName ?? "IPO"} - Client Wise Billing", titleFont));
+                document.Add(new Paragraph($"IPO Price: {ipoPrice}, PreOpen Price: {ipoPreOpenPrice}", cellFont));
+                document.Add(new Paragraph(" "));
+
+                // Table
+                var table = new PdfPTable(12) { WidthPercentage = 100 };
+                table.SetWidths(new float[] { 3, 8, 5, 5, 5, 8, 10, 5, 8, 6, 6, 6 });
+
+                // Headers
+                var headers = new[] { "Sr.No", "Group", "Type", "Category", "Investor", "PAN", "Client Name", "Alloted", "Demat", "Rate", "PreOpen", "Amount" };
+                foreach (var header in headers)
+                {
+                    var cell = new PdfPCell(new Phrase(header, headerFont))
+                    {
+                        BackgroundColor = new BaseColor(200, 220, 255),
+                        HorizontalAlignment = Element.ALIGN_CENTER,
+                        Padding = 3
+                    };
+                    table.AddCell(cell);
+                }
+
+                // Data rows
+                int srNo = 1;
+                foreach (var child in pagedResult.Items ?? new List<IPO_PlaceOrderChild>())
+                {
+                    var order = child.IPOOrder;
+                    var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
+                    var allotedQty = child.AllotedQty ?? 0;
+                    var amount = (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+
+                    table.AddCell(new PdfPCell(new Phrase(srNo++.ToString(), cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(child.Group?.GroupName ?? "-", cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(((IPOOrderType)order.OrderType).ToString(), cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(((IPOOrderCategory)order.OrderCategory).ToString(), cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(((IPOInvestorType)order.InvestorType).ToString(), cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(child.PANNumber ?? "", cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(child.ClientName ?? "", cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(allotedQty.ToString(), cellFont)) { Padding = 2, HorizontalAlignment = Element.ALIGN_RIGHT });
+                    table.AddCell(new PdfPCell(new Phrase(child.DematNumber ?? "", cellFont)) { Padding = 2 });
+                    table.AddCell(new PdfPCell(new Phrase(order.Rate.ToString("N2"), cellFont)) { Padding = 2, HorizontalAlignment = Element.ALIGN_RIGHT });
+                    table.AddCell(new PdfPCell(new Phrase(preOpenPrice.ToString("N2"), cellFont)) { Padding = 2, HorizontalAlignment = Element.ALIGN_RIGHT });
+                    table.AddCell(new PdfPCell(new Phrase(amount.ToString("N2"), cellFont)) { Padding = 2, HorizontalAlignment = Element.ALIGN_RIGHT });
+                }
+
+                document.Add(table);
+                document.Close();
+
+                var fileResponse = new FileResponse
+                {
+                    Bytes = ms.ToArray(),
+                    ContentType = "application/pdf",
+                    FileName = $"{ipoMaster?.IPOName ?? "IPO"}-ClientWiseBilling.pdf"
+                };
+
+                return ReturnData<FileResponse>.SuccessResponse(fileResponse, "PDF file generated", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<FileResponse>.ErrorResponse($"Error generating PDF: {ex.Message}", 500);
+            }
+        }
+
+        #endregion
     }
 }

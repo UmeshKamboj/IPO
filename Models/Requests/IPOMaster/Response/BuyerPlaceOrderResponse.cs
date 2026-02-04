@@ -36,11 +36,22 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public string? DematNumber { get; set; }
         public string? ApplicationNumber { get; set; }
         public string? Remark { get; set; }
-        public decimal? PreOpenPrice { get; set; }
-        public decimal? Amount { get; set; }
+        public decimal PreOpenPrice { get; set; }
+        public decimal Amount { get; set; }
         public bool? ApplicateRate { get; set; }
         public OrderCategoryOptionsResponse? OrderCategoryOptions { get; set; }
 
     }
-    
+
+    /// <summary>
+    /// Client-wise billing response with summary data
+    /// </summary>
+    public class ClientWiseBillingResponse
+    {
+        public decimal Total { get; set; }
+        public decimal IPOPrice { get; set; }
+        public decimal PreOpenPrice { get; set; }
+        public PagedResult<BuyerOrderResponse>? Data { get; set; }
+    }
+
 }

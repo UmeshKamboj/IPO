@@ -1,4 +1,5 @@
 using IPOClient.Models.Requests.Group;
+using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Responses;
 
 namespace IPOClient.Services.Interfaces
@@ -11,5 +12,6 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData<GroupResponse>> GetGroupByIdAsync(int id, int companyId);
         Task<ReturnData<PagedResult<GroupResponse>>> GetGroupsAsync(GroupFilterRequest request, int companyId);
         Task<ReturnData<List<GroupListResponse>>> GetGroupListAsync(int companyId);
+        Task<ReturnData> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId);
     }
 }

@@ -73,6 +73,13 @@ namespace IPOClient.Models.Entities
         public int? AllotedQty { get; set; }
         public string? DematNumber { get; set; }
         public string? ApplicationNo { get; set; }
+
+        /// <summary>
+        /// PreOpen Price for this child order. Set from IPO parent on creation.
+        /// </summary>
+        [Column(TypeName = "decimal(18, 4)")]
+        public decimal PreOpenPrice { get; set; } = 0;
+
         public int? CreatedBy { get; set; }
         public int? CompanyId { get; set; }
         public DateTime ChildOrderCreatedDate { get; set; } = DateTime.UtcNow;

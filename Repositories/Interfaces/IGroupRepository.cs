@@ -1,5 +1,6 @@
 using IPOClient.Models.Entities;
 using IPOClient.Models.Requests.Group;
+using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Responses;
 
 namespace IPOClient.Repositories.Interfaces
@@ -12,5 +13,6 @@ namespace IPOClient.Repositories.Interfaces
         Task<IPO_GroupMaster?> GetByIdAsync(int id, int companyId);
         Task<PagedResult<IPO_GroupMaster>> GetGroupsWithFiltersAsync(GroupFilterRequest request, int companyId);
         Task<List<IPO_GroupMaster>> GetAllByCompanyAsync(int companyId);
+        Task<int> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId);
     }
 }

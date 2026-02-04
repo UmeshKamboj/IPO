@@ -1,8 +1,29 @@
-﻿namespace IPOClient.Models.Requests.IPOMaster.Response
+﻿using IPOClient.Models.Responses;
+
+namespace IPOClient.Models.Requests.IPOMaster.Response
 {
+    /// <summary>
+    /// Wrapper response for group wise billing that includes global tally status flag
+    /// </summary>
+    public class GroupWiseBillingPagedResponse
+    {
+        public PagedResult<GroupWiseBillingResponse> PagedResult { get; set; }
+
+        /// <summary>
+        /// True if all groups in the result have TallyStatus = true
+        /// </summary>
+        public bool AllTallyStatusTrue { get; set; }
+    }
+
     public class GroupWiseBillingResponse
     {
+        public int GroupId { get; set; }
         public string GroupName { get; set; }
+
+        /// <summary>
+        /// Tally sync status: true = synced, false = not synced
+        /// </summary>
+        public bool TallyStatus { get; set; }
 
         public CategoryBilling Retail { get; set; } = new();
         public CategoryBilling SHNI { get; set; } = new();

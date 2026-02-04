@@ -152,6 +152,20 @@ namespace IPOClient.Repositories.Implementations
             await _context.SaveChangesAsync();
             return true;
         }
+
+        public async Task<bool> UpdatePreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId)
+        {
+            var ipo = await _dbSet.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId && i.IsActive);
+            if (ipo == null)
+                return false;
+
+            ipo.OpenIPOPrice = preOpenPrice;
+            ipo.ModifiedBy = userId.ToString();
+            ipo.ModifiedDate = DateTime.UtcNow;
+            _dbSet.Update(ipo);
+            await _context.SaveChangesAsync();
+            return true;
+        }
     }
 
 }

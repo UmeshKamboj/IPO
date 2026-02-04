@@ -35,4 +35,32 @@ namespace IPOClient.Models.Requests.IPOMaster.Request
 
         // Global search will search across: PANNumber, ClientName, DematNumber, ApplicationNo
     }
+
+    /// <summary>
+    /// Request to update PreOpen Price for IPO
+    /// </summary>
+    public class UpdatePreOpenPriceRequest
+    {
+        /// <summary>
+        /// IPO Id (required)
+        /// </summary>
+        public int? IPOId { get; set; }
+
+        /// <summary>
+        /// New PreOpen Price value
+        /// </summary>
+        public decimal PreOpenPrice { get; set; }
+
+        /// <summary>
+        /// Optional: Specific OrderId to update all children of that order.
+        /// </summary>
+        //public int? OrderId { get; set; }
+
+        /// <summary>
+        /// Optional: Specific POChildId to update single child item.
+        /// </summary>
+        public int? POChildId { get; set; }
+
+        // Priority: POChildId > OrderId > IPOId (all orders)
+    }
 }

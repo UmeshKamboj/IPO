@@ -294,7 +294,7 @@ namespace IPOClient.Controllers
         /// </summary>
         /// <param name="request"></param>
         /// <param name="ipoId"></param>
-        /// <returns></returns>
+        /// <returns>Returns billing data with Total, IPOPrice, PreOpenPrice summary</returns>
         [HttpPost("{ipoId}/clientwisebilling")]
         public async Task<IActionResult> GetClientWiseBillingList([FromBody] OrderDetailFilterRequest request, int ipoId)
         {
@@ -304,6 +304,34 @@ namespace IPOClient.Controllers
             var statusCode = result.ResponseCode == 200 ? 200 : 400;
             return StatusCode(statusCode, result);
         }
+
+        /// <summary>
+        /// Update PreOpen Price for IPO (affects all orders calculation)
+        /// </summary>
+        /// <param name="request">IPOId and PreOpenPrice required</param>
+        /// <returns></returns>
+        [HttpPut("preopenprice")]
+        public async Task<IActionResult> UpdatePreOpenPrice([FromBody] UpdatePreOpenPriceRequest request)
+        {
+            var companyId = GetCompanyId();
+            var userId = GetCurrentUserId();
+            var result = await _ipoBuyerPlaceOrderService.UpdatePreOpenPriceAsync(request, companyId, userId);
+
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+
+        ///// <summary>
+        ///// Sync existing child orders PreOpenPrice from parent IPO (one-time migration)
+        ///// </summary>
+        //[HttpPost("{ipoId}/syncpreopenprice")]
+        //public async Task<IActionResult> SyncChildrenPreOpenPrice(int ipoId)
+        //{
+        //    var companyId = GetCompanyId();
+        //    var userId = GetCurrentUserId();
+        //    var result = await _ipoBuyerPlaceOrderService.SyncChildrenPreOpenPriceFromParentAsync(ipoId, companyId, userId);
+
+        //    return StatusCode(result.ResponseCode ?? 500, result);
+        //}
 
         /// <summary>
         /// Group Wise Billing List
@@ -317,6 +345,45 @@ namespace IPOClient.Controllers
                 return StatusCode(result.ResponseCode ?? 400, result);
 
             return Ok(result);
+        }
+
+        /// <summary>
+        /// Download Group Wise Billing as Excel
+        /// </summary>
+        [HttpPost("{ipoId}/groupwise/billing/download/excel")]
+        public async Task<IActionResult> DownloadGroupWiseBillingExcel(int ipoId, [FromBody] GroupWiseBillingRequest request)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.DownloadGroupWiseBillingExcelAsync(request, companyId, ipoId);
+            if (!result.Success || result.Data == null)
+                return BadRequest(result);
+            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        }
+
+        /// <summary>
+        /// Download Client Wise Billing as Excel
+        /// </summary>
+        [HttpPost("{ipoId}/clientwisebilling/download/excel")]
+        public async Task<IActionResult> DownloadClientWiseBillingExcel(int ipoId, [FromBody] OrderDetailFilterRequest request)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.DownloadClientWiseBillingExcelAsync(request, companyId, ipoId);
+            if (!result.Success || result.Data == null)
+                return BadRequest(result);
+            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        }
+
+        /// <summary>
+        /// Download Client Wise Billing as PDF
+        /// </summary>
+        [HttpPost("{ipoId}/clientwisebilling/download/pdf")]
+        public async Task<IActionResult> DownloadClientWiseBillingPdf(int ipoId, [FromBody] OrderDetailFilterRequest request)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.DownloadClientWiseBillingPdfAsync(request, companyId, ipoId);
+            if (!result.Success || result.Data == null)
+                return BadRequest(result);
+            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
         }
 
         /// <summary>

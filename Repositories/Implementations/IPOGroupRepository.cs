@@ -77,6 +77,48 @@ namespace IPOClient.Repositories.Implementations
 
             return list;
         }
+
+        public async Task<int> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId)
+        {
+            int updatedCount = 0;
+
+            if (request.UpdateType?.ToLower() == "all")
+            {
+                // Update all groups for this IPO
+                var groups = await _dbSet
+                    .Where(x => x.IPOId == request.IPO_Id && x.CompanyId == companyId && x.IsActive)
+                    .ToListAsync();
+
+                foreach (var group in groups)
+                {
+                    group.TallyStatus = request.Status;
+                    group.ModifiedBy = userId;
+                    group.ModifiedDate = DateTime.UtcNow;
+                }
+
+                updatedCount = groups.Count;
+            }
+            else
+            {
+                // Update single group by ID
+                var group = await _dbSet
+                    .FirstOrDefaultAsync(x => x.IPOGroupId == request.GroupId &&
+                                             x.IPOId == request.IPO_Id &&
+                                             x.CompanyId == companyId &&
+                                             x.IsActive);
+
+                if (group != null)
+                {
+                    group.TallyStatus = request.Status;
+                    group.ModifiedBy = userId;
+                    group.ModifiedDate = DateTime.UtcNow;
+                    updatedCount = 1;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return updatedCount;
+        }
     }
 }
 

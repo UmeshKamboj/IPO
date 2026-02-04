@@ -21,6 +21,10 @@ namespace IPOClient.Repositories.Implementations
 
         public async Task<int> CreateAsync(IPOBuyerPlaceOrderRequest request, int userId, int companyId)
         {
+            // Get IPO's PreOpenPrice to set on child orders
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == request.IPOId && i.CompanyId == companyId);
+            var preOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
             var master = new IPO_BuyerPlaceOrderMaster
             {
                 IPOId = request.IPOId,
@@ -66,6 +70,7 @@ namespace IPOClient.Repositories.Implementations
                     {
                         Quantity = 1,
                         GroupId = request.GroupId, // Set GroupId from master
+                        PreOpenPrice = preOpenPrice, // Set from IPO parent
                         CreatedBy = userId,
                         CompanyId = companyId,
                         ChildOrderCreatedDate= DateTime.UtcNow,
@@ -454,47 +459,66 @@ namespace IPOClient.Repositories.Implementations
         public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(OrderStatusFilterRequest request, int companyId)
         {
             var response = new OrderStatusSummaryResponse();
-          
-            var query = _context.BuyerOrders
-                .Include(o => o.BuyerMaster)
-                .Include(o => o.OrderChild)
-                .Where(o =>
-                    o.BuyerMaster.CompanyId == companyId &&
-                    o.BuyerMaster.IPOId == request.IPOId &&
-                    o.BuyerMaster.IsActive && !o.BuyerMaster.IsDeleted && !o.IsDeleted)
+
+            // Get IPO Master data for pricing
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == request.IPOId && i.CompanyId == companyId);
+            var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+            var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+            // Get child orders with all required data
+            var childQuery = _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                .Where(c =>
+                    c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                    c.IPOOrder.BuyerMaster.IPOId == request.IPOId &&
+                    c.IPOOrder.BuyerMaster.IsActive && !c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted && !c.IsDeleted)
                 .AsQueryable();
 
             // Filter by GroupId through child table
             if (request.GroupId.HasValue && request.GroupId > 0)
-                query = query.Where(o => o.OrderChild.Any(c => c.GroupId == request.GroupId));
+                childQuery = childQuery.Where(c => c.GroupId == request.GroupId);
 
             if (request.InvestorType.HasValue && request.InvestorType > 0)
-                query = query.Where(o => o.InvestorType == request.InvestorType);
+                childQuery = childQuery.Where(c => c.IPOOrder.InvestorType == request.InvestorType);
             if (request.OrderCategory.HasValue && request.OrderCategory > 0)
-                query = query.Where(o => o.OrderCategory == request.OrderCategory);
+                childQuery = childQuery.Where(c => c.IPOOrder.OrderCategory == request.OrderCategory);
+
+            var childOrders = await childQuery.ToListAsync();
 
             // =========================
-            // GROUPED DATA
+            // GROUPED DATA with new formula
             // =========================
-            var grouped = await query
-                .GroupBy(o => new
+            var grouped = childOrders
+                .GroupBy(c => new
                 {
-                    o.OrderCategory,
-                    o.InvestorType,
-                    o.OrderType,
-                    o.PremiumStrikePrice
+                    c.IPOOrder.OrderCategory,
+                    c.IPOOrder.InvestorType,
+                    c.IPOOrder.OrderType,
+                    c.IPOOrder.PremiumStrikePrice
                 })
-                .Select(g => new
+                .Select(g =>
                 {
-                    g.Key.OrderCategory,
-                    g.Key.InvestorType,
-                    g.Key.OrderType,
-                    g.Key.PremiumStrikePrice,
-                    Count = g.Sum(x => x.Quantity),
-                    Avg = g.Average(x => x.Rate),
-                    Amount = g.Sum(x => x.Quantity * x.Rate)
+                    var count = g.Count();
+                    var totalAmount = g.Sum(c =>
+                    {
+                        var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
+                        return (preOpenPrice - ipoPrice) * (c.AllotedQty ?? 0) - c.IPOOrder.Rate;
+                    });
+                    var avgRate = count > 0 ? totalAmount / count : 0;
+
+                    return new
+                    {
+                        g.Key.OrderCategory,
+                        g.Key.InvestorType,
+                        g.Key.OrderType,
+                        g.Key.PremiumStrikePrice,
+                        Count = count,
+                        Avg = avgRate,
+                        Amount = totalAmount
+                    };
                 })
-                .ToListAsync();
+                .ToList();
             // =========================
             // PRE-INITIALIZE KOSTAK & SUBJECT TO
             // =========================
@@ -833,10 +857,15 @@ namespace IPOClient.Repositories.Implementations
         {
             var order = await _context.BuyerOrders
              .Include(o => o.OrderChild)
+             .Include(o => o.BuyerMaster)
              .FirstOrDefaultAsync(o => o.OrderId == request.OrderId);
 
             if (order == null)
                 return 0; //not found
+
+            // Get IPO's PreOpenPrice for new child orders
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == order.BuyerMaster.IPOId && i.CompanyId == order.CompanyId);
+            var preOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
 
             // ============================
             // 1️ UPDATE ORDER TABLE
@@ -874,6 +903,7 @@ namespace IPOClient.Repositories.Implementations
                     {
                         Quantity = 1,
                         GroupId = request.GroupId,
+                        PreOpenPrice = preOpenPrice, // Set from IPO parent
                         CreatedBy = userId,
                         CompanyId = order.CompanyId,
                         ChildOrderCreatedDate = DateTime.UtcNow
@@ -1046,6 +1076,10 @@ namespace IPOClient.Repositories.Implementations
             IPO_BuyerPlaceOrderMaster? master = null;
             IPO_BuyerOrder? existingOrder = null;
 
+            // Get IPO's PreOpenPrice for child orders
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
+            var preOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
             // =========================
             // 1️ CREATE MASTER / LOAD ORDER
             // =========================
@@ -1133,6 +1167,7 @@ namespace IPOClient.Repositories.Implementations
                         {
                             GroupId = groupId,
                             Quantity = 1,
+                            PreOpenPrice = preOpenPrice, // Set from IPO parent
                             CreatedBy = createdByUserId,
                             CompanyId = companyId,
                             ChildOrderCreatedDate = DateTime.UtcNow
@@ -1158,6 +1193,7 @@ namespace IPOClient.Repositories.Implementations
                         {
                             GroupId = groupId,
                             Quantity = 1,
+                            PreOpenPrice = preOpenPrice, // Set from IPO parent
                             CreatedBy = createdByUserId,
                             CompanyId = companyId,
                             ChildOrderCreatedDate = DateTime.UtcNow
@@ -1363,10 +1399,13 @@ namespace IPOClient.Repositories.Implementations
 
         public async Task<PagedResult<IPO_PlaceOrderChild>> GetClientWisePagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
         {
+            // Get IPO Master data for this ipoId to use in Amount calculation
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
+
             var query = _context.ChildPlaceOrder
                  .Include(c => c.IPOOrder)
                      .ThenInclude(o => o.BuyerMaster)
-                 .Include(c => c.Group).ThenInclude(g => g.IPOMaster)
+                 .Include(c => c.Group)
                  .AsQueryable();
 
             query = query.Where(c =>
@@ -1425,6 +1464,75 @@ namespace IPOClient.Repositories.Implementations
             var items = await query.ToListAsync();
             return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
         }
+
+        public async Task<decimal> GetClientWiseBillingTotalAsync(OrderDetailFilterRequest request, int companyId, int ipoId)
+        {
+            // Get IPO Master data directly for this ipoId
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
+            var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+            var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+            var query = _context.ChildPlaceOrder
+                 .Include(c => c.IPOOrder)
+                     .ThenInclude(o => o.BuyerMaster)
+                 .Include(c => c.Group)
+                 .AsQueryable();
+
+            query = query.Where(c =>
+                c.IPOOrder.BuyerMaster.IsActive &&
+                c.IPOOrder.BuyerMaster.CompanyId == companyId
+                && c.IPOOrder.BuyerMaster.IPOId == ipoId && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted
+            );
+
+            // Apply same filters as GetClientWisePagedListAsync (excluding pagination)
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                var search = request.SearchValue?.Trim().ToLower();
+                int? orderTypeMatch = Enum.GetValues(typeof(IPOOrderType)).Cast<IPOOrderType>()
+                .Where(e => e.ToString().ToLower().Contains(search)).Select(e => (int)e).FirstOrDefault();
+
+                int? orderCategoryMatch = Enum.GetValues(typeof(IPOOrderCategory)).Cast<IPOOrderCategory>()
+                    .Where(e => e.ToString().ToLower().Contains(search)).Select(e => (int)e).FirstOrDefault();
+
+                int? investorTypeMatch = Enum.GetValues(typeof(IPOInvestorType)).Cast<IPOInvestorType>()
+                    .Where(e => e.ToString().ToLower().Contains(search)).Select(e => (int)e).FirstOrDefault();
+
+                query = query.Where(o =>
+                   (o.PANNumber != null && o.PANNumber.Contains(request.SearchValue)) ||
+                    (o.ClientName != null && o.ClientName.Contains(request.SearchValue)) ||
+                    (o.DematNumber != null && o.DematNumber.Contains(request.SearchValue)) ||
+                    (o.ApplicationNo != null && o.ApplicationNo.Contains(request.SearchValue)) ||
+                     (o.Group != null &&
+                    o.Group.GroupName != null &&
+                     o.Group.GroupName.ToLower().Contains(request.SearchValue.ToLower()))||
+                   (orderTypeMatch.HasValue && o.IPOOrder.OrderType == orderTypeMatch.Value)
+                 || (orderCategoryMatch.HasValue && o.IPOOrder.OrderCategory == orderCategoryMatch.Value)
+                 || (investorTypeMatch.HasValue && o.IPOOrder.InvestorType == investorTypeMatch.Value)
+                 || (o.IPOOrder.PremiumStrikePrice == request.SearchValue)
+             );
+            }
+
+            if (request.GroupId.HasValue && request.GroupId.Value > 0)
+                query = query.Where(c => c.GroupId == request.GroupId.Value);
+
+            if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
+                query = query.Where(c => c.IPOOrder.OrderCategory == request.OrderCategoryId.Value);
+
+            if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
+                query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
+
+            // Calculate total using new formula: Sum((PreOpenPrice - IPOPrice) × AllotedQty - Rate)
+            // Use child's PreOpenPrice, fallback to IPO's PreOpenPrice if child has 0
+            var items = await query.ToListAsync();
+            var total = items.Sum(c =>
+            {
+                var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
+                return (preOpenPrice - ipoPrice) * (c.AllotedQty ?? 0) - c.IPOOrder.Rate;
+            });
+
+            return total;
+        }
+
         public async Task<List<IPO_PlaceOrderChild>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId)
         {
             var query = _context.ChildPlaceOrder
@@ -1583,6 +1691,91 @@ namespace IPOClient.Repositories.Implementations
                 { "pendingPanApplications", pendingPanApplications }
             };
             return result;
+        }
+
+        public async Task<bool> UpdateChildPreOpenPriceAsync(int poChildId, decimal preOpenPrice, int companyId, int userId)
+        {
+            var child = await _context.ChildPlaceOrder
+                .FirstOrDefaultAsync(c => c.POChildId == poChildId && c.CompanyId == companyId && !c.IsDeleted);
+
+            if (child == null)
+                return false;
+
+            child.PreOpenPrice = preOpenPrice;
+            child.ModifiedBy = userId.ToString();
+            child.ModifiedDate = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<int> UpdateOrderChildrenPreOpenPriceAsync(int orderId, decimal preOpenPrice, int companyId, int userId)
+        {
+            var children = await _context.ChildPlaceOrder
+                .Where(c => c.OrderId == orderId &&
+                           c.CompanyId == companyId &&
+                           !c.IsDeleted)
+                .ToListAsync();
+
+            foreach (var child in children)
+            {
+                child.PreOpenPrice = preOpenPrice;
+                child.ModifiedBy = userId.ToString();
+                child.ModifiedDate = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return children.Count;
+        }
+
+        public async Task<int> UpdateAllChildrenPreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId)
+        {
+            var children = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                .Where(c => c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                           c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                           c.IPOOrder.BuyerMaster.IsActive &&
+                           !c.IsDeleted &&
+                           !c.IPOOrder.IsDeleted &&
+                           !c.IPOOrder.BuyerMaster.IsDeleted)
+                .ToListAsync();
+
+            foreach (var child in children)
+            {
+                child.PreOpenPrice = preOpenPrice;
+                child.ModifiedBy = userId.ToString();
+                child.ModifiedDate = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return children.Count;
+        }
+
+        public async Task<int> SyncChildrenPreOpenPriceFromParentAsync(int ipoId, decimal preOpenPrice, int companyId, int userId)
+        {
+            // Only update children where PreOpenPrice is 0 (not yet set)
+            var children = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                .Where(c => c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                           c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                           c.IPOOrder.BuyerMaster.IsActive &&
+                           !c.IsDeleted &&
+                           !c.IPOOrder.IsDeleted &&
+                           !c.IPOOrder.BuyerMaster.IsDeleted &&
+                           c.PreOpenPrice == 0)
+                .ToListAsync();
+
+            foreach (var child in children)
+            {
+                child.PreOpenPrice = preOpenPrice;
+                child.ModifiedBy = userId.ToString();
+                child.ModifiedDate = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return children.Count;
         }
     }
 }

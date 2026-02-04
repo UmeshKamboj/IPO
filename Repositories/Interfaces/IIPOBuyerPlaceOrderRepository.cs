@@ -31,8 +31,14 @@ namespace IPOClient.Repositories.Interfaces
         Task<string> ResolveRemarkNamesAsync(string? remarkIds, int ipoId,int companyId);
 
         Task<PagedResult<IPO_PlaceOrderChild>> GetClientWisePagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<decimal> GetClientWiseBillingTotalAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
         Task<List<IPO_PlaceOrderChild>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
 
         Task<PagedResult<IPO_PlaceOrderChild>> GetOrderDetailPagedListByOrderIdAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType,int orderId);
+
+        Task<bool> UpdateChildPreOpenPriceAsync(int poChildId, decimal preOpenPrice, int companyId, int userId);
+        Task<int> UpdateOrderChildrenPreOpenPriceAsync(int orderId, decimal preOpenPrice, int companyId, int userId);
+        Task<int> UpdateAllChildrenPreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId);
+        Task<int> SyncChildrenPreOpenPriceFromParentAsync(int ipoId, decimal preOpenPrice, int companyId, int userId);
     }
 }

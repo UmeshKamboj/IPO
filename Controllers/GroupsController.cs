@@ -96,6 +96,21 @@ namespace IPOClient.Controllers
             return StatusCode(result.ResponseCode ?? 500, result);
         }
 
+        /// <summary>
+        /// Update Tally Status for one or all groups
+        /// </summary>
+        /// <remarks>
+        /// UpdateType: "One" for single group by GroupName, "All" for all groups in the IPO
+        /// </remarks>
+        [HttpPut("update-telly-status")]
+        public async Task<IActionResult> UpdateTallyStatus([FromBody] UpdateTallyStatusRequest request)
+        {
+            var userId = GetUserId();
+            var companyId = GetCompanyId();
+            var result = await _groupService.UpdateTallyStatusAsync(request, companyId, userId);
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+
         private int GetUserId()
         {
             var userIdClaim = User.FindFirst("sub")?.Value;

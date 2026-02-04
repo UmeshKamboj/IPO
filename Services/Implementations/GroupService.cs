@@ -1,5 +1,6 @@
 using IPOClient.Models.Entities;
 using IPOClient.Models.Requests.Group;
+using IPOClient.Models.Requests.IPOMaster.Request;
 using IPOClient.Models.Responses;
 using IPOClient.Repositories.Interfaces;
 using IPOClient.Services.Interfaces;
@@ -123,6 +124,27 @@ namespace IPOClient.Services.Implementations
             catch (Exception ex)
             {
                 return ReturnData<List<GroupListResponse>>.ErrorResponse($"Error retrieving groups: {ex.Message}", 500);
+            }
+        }
+
+        public async Task<ReturnData> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId)
+        {
+            try
+            {
+                var updatedCount = await _groupRepository.UpdateTallyStatusAsync(request, companyId, userId);
+
+                if (updatedCount == 0)
+                    return ReturnData.ErrorResponse("No groups found to update", 404);
+
+                var message = request.UpdateType?.ToLower() == "all"
+                    ? $"Tally status updated for {updatedCount} groups"
+                    : "Tally status updated successfully";
+
+                return ReturnData.SuccessResponse(message, 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error updating tally status: {ex.Message}", 500);
             }
         }
 

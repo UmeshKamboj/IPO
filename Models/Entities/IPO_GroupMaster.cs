@@ -26,6 +26,11 @@ namespace IPOClient.Models.Entities
         public DateTime? ModifiedDate { get; set; }
         public int? IPOId { get; set; }
 
+        /// <summary>
+        /// Tally sync status: true = synced, false = not synced
+        /// </summary>
+        public bool TallyStatus { get; set; } = false;
+
         [ForeignKey(nameof(IPOId))]
         public IPO_IPOMaster? IPOMaster { get; set; }
     }

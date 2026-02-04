@@ -5,6 +5,18 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public int AnalysisType { get; set; }
         public decimal IPOPricePerShare { get; set; }
 
+        // Input fields - stored in DB and returned for form pre-fill
+        public decimal ExpectedApplications_Retail { get; set; }
+        public decimal ExpectedApplications_SHNI { get; set; }
+        public decimal ExpectedApplications_BHNI { get; set; }
+        public decimal ActualAllottedQty_Total { get; set; }
+        public decimal ActualAllottedQty_Retail { get; set; }
+        public decimal ActualAllottedQty_SHNI { get; set; }
+        public decimal ActualAllottedQty_BHNI { get; set; }
+        public decimal ProfitMargin { get; set; }
+        public decimal SpotPremium { get; set; }
+        public decimal? SpotPrice { get; set; }
+
         // Per investor type subscription data (Tab 1 & 2)
         public Dictionary<string, SubscriptionBlock> Subscriptions { get; set; } = new();
 

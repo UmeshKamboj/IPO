@@ -15,7 +15,7 @@ namespace IPOClient.Repositories.Interfaces
         Task<List<IPO_IPOMaster>> GetIPONameIdByCompanyAsync(int companyId);
 
         Task<bool> UpdateIPOOpenPriceAsync(int ipoId,decimal openPrice ,int userId);
-
+        Task<bool> UpdatePreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId);
 
     }
 }

@@ -42,7 +42,18 @@ namespace IPOClient.Services.Implementations
                 var response = new IPOAnalysisResponse
                 {
                     AnalysisType = request.AnalysisType,
-                    IPOPricePerShare = ipoMaster.IPO_Upper_Price_Band
+                    IPOPricePerShare = ipoMaster.IPO_Upper_Price_Band,
+                    // Include input values in response for form pre-fill
+                    ExpectedApplications_Retail = request.ExpectedApplications_Retail ?? 0,
+                    ExpectedApplications_SHNI = request.ExpectedApplications_SHNI ?? 0,
+                    ExpectedApplications_BHNI = request.ExpectedApplications_BHNI ?? 0,
+                    ActualAllottedQty_Total = request.ActualAllottedQty_Total ?? 0,
+                    ActualAllottedQty_Retail = request.ActualAllottedQty_Retail ?? 0,
+                    ActualAllottedQty_SHNI = request.ActualAllottedQty_SHNI ?? 0,
+                    ActualAllottedQty_BHNI = request.ActualAllottedQty_BHNI ?? 0,
+                    ProfitMargin = request.ProfitMargin ?? 0,
+                    SpotPremium = request.SpotPremium ?? 0,
+                    SpotPrice = request.SpotPrice
                 };
 
                 // Copy count tables from order summary
@@ -125,10 +136,24 @@ namespace IPOClient.Services.Implementations
             {
                 var analysis = await _analysisRepository.GetAnalysisAsync(ipoId, analysisType, companyId);
 
-                // If saved analysis exists, return it
+                // If saved analysis exists, return it with stored input values
                 if (analysis != null && !string.IsNullOrEmpty(analysis.CalculatedResultJson))
                 {
                     var response = JsonSerializer.Deserialize<IPOAnalysisResponse>(analysis.CalculatedResultJson);
+                    if (response != null)
+                    {
+                        // Populate input fields from the stored entity (in case JSON doesn't have them)
+                        response.ExpectedApplications_Retail = analysis.ExpectedApplications_Retail ?? 0;
+                        response.ExpectedApplications_SHNI = analysis.ExpectedApplications_SHNI ?? 0;
+                        response.ExpectedApplications_BHNI = analysis.ExpectedApplications_BHNI ?? 0;
+                        response.ActualAllottedQty_Total = analysis.ActualAllottedQty_Total ?? 0;
+                        response.ActualAllottedQty_Retail = analysis.ActualAllottedQty_Retail ?? 0;
+                        response.ActualAllottedQty_SHNI = analysis.ActualAllottedQty_SHNI ?? 0;
+                        response.ActualAllottedQty_BHNI = analysis.ActualAllottedQty_BHNI ?? 0;
+                        response.ProfitMargin = analysis.ProfitMargin ?? 0;
+                        response.SpotPremium = analysis.SpotPremium ?? 0;
+                        response.SpotPrice = analysis.SpotPrice;
+                    }
                     return ReturnData<IPOAnalysisResponse>.SuccessResponse(response!, "Analysis retrieved successfully", 200);
                 }
 
@@ -154,12 +179,58 @@ namespace IPOClient.Services.Implementations
                 var analyses = await _analysisRepository.GetAllAnalysesAsync(ipoId, companyId);
                 var responses = new List<IPOAnalysisResponse>();
 
-                foreach (var a in analyses)
+                // If saved analyses exist, return them with stored input values
+                if (analyses.Any())
                 {
-                    if (!string.IsNullOrEmpty(a.CalculatedResultJson))
+                    foreach (var a in analyses)
                     {
-                        var r = JsonSerializer.Deserialize<IPOAnalysisResponse>(a.CalculatedResultJson);
-                        if (r != null) responses.Add(r);
+                        if (!string.IsNullOrEmpty(a.CalculatedResultJson))
+                        {
+                            var r = JsonSerializer.Deserialize<IPOAnalysisResponse>(a.CalculatedResultJson);
+                            if (r != null)
+                            {
+                                // Populate input fields from the stored entity (in case JSON doesn't have them)
+                                r.ExpectedApplications_Retail = a.ExpectedApplications_Retail ?? 0;
+                                r.ExpectedApplications_SHNI = a.ExpectedApplications_SHNI ?? 0;
+                                r.ExpectedApplications_BHNI = a.ExpectedApplications_BHNI ?? 0;
+                                r.ActualAllottedQty_Total = a.ActualAllottedQty_Total ?? 0;
+                                r.ActualAllottedQty_Retail = a.ActualAllottedQty_Retail ?? 0;
+                                r.ActualAllottedQty_SHNI = a.ActualAllottedQty_SHNI ?? 0;
+                                r.ActualAllottedQty_BHNI = a.ActualAllottedQty_BHNI ?? 0;
+                                r.ProfitMargin = a.ProfitMargin ?? 0;
+                                r.SpotPremium = a.SpotPremium ?? 0;
+                                r.SpotPrice = a.SpotPrice;
+                                responses.Add(r);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // No saved analyses - calculate fresh for all 3 analysis types with default inputs
+                    for (int analysisType = 0; analysisType <= 2; analysisType++)
+                    {
+                        var request = new IPOAnalysisRequest
+                        {
+                            IPOId = ipoId,
+                            AnalysisType = analysisType,
+                            ExpectedApplications_Retail = 0,
+                            ExpectedApplications_SHNI = 0,
+                            ExpectedApplications_BHNI = 0,
+                            ActualAllottedQty_Total = 0,
+                            ActualAllottedQty_Retail = 0,
+                            ActualAllottedQty_SHNI = 0,
+                            ActualAllottedQty_BHNI = 0,
+                            ProfitMargin = 0,
+                            SpotPremium = 0,
+                            SpotPrice = 0
+                        };
+
+                        var calcResult = await CalculateAnalysisAsync(request, companyId);
+                        if (calcResult.Success && calcResult.Data != null)
+                        {
+                            responses.Add(calcResult.Data);
+                        }
                     }
                 }
 

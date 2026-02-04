@@ -26,23 +26,45 @@ namespace IPOClient.Repositories.Implementations
         {
             var response = new OrderStatusSummaryResponse();
 
-            var grouped = await _context.BuyerOrders
-                .Include(o => o.BuyerMaster)
-                .Where(o =>
-                    o.BuyerMaster.CompanyId == companyId &&
-                    o.BuyerMaster.IPOId == ipoId &&
-                    o.BuyerMaster.IsActive && !o.BuyerMaster.IsDeleted && !o.IsDeleted)
-                .GroupBy(o => new { o.OrderCategory, o.InvestorType, o.OrderType })
-                .Select(g => new
-                {
-                    g.Key.OrderCategory,
-                    g.Key.InvestorType,
-                    g.Key.OrderType,
-                    Count = g.Sum(x => x.Quantity),
-                    Avg = g.Average(x => x.Rate),
-                    Amount = g.Sum(x => x.Quantity * x.Rate)
-                })
+            // Get IPO Master data for pricing
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
+            var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+            var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+            // Get child orders with all required data
+            var childOrders = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                .Where(c =>
+                    c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                    c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                    c.IPOOrder.BuyerMaster.IsActive && !c.IPOOrder.BuyerMaster.IsDeleted && !c.IPOOrder.IsDeleted && !c.IsDeleted)
                 .ToListAsync();
+
+            // Group and calculate using new formula: (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+            var grouped = childOrders
+                .GroupBy(c => new { c.IPOOrder.OrderCategory, c.IPOOrder.InvestorType, c.IPOOrder.OrderType })
+                .Select(g =>
+                {
+                    var count = g.Count();
+                    var totalAmount = g.Sum(c =>
+                    {
+                        var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
+                        return (preOpenPrice - ipoPrice) * (c.AllotedQty ?? 0) - c.IPOOrder.Rate;
+                    });
+                    var avgRate = count > 0 ? totalAmount / count : 0;
+
+                    return new
+                    {
+                        g.Key.OrderCategory,
+                        g.Key.InvestorType,
+                        g.Key.OrderType,
+                        Count = count,
+                        Avg = avgRate,
+                        Amount = totalAmount
+                    };
+                })
+                .ToList();
 
             // Pre-initialize
             var investorTypes = new[] { IPOInvestorType.Retail, IPOInvestorType.SHNI, IPOInvestorType.BHNI };

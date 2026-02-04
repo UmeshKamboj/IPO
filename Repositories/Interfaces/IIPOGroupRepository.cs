@@ -10,6 +10,6 @@ namespace IPOClient.Repositories.Interfaces
         Task<bool> UpdateAsync(int id, CreateIPOGroupRequest request, int userId);
         Task<bool> DeleteAsync(int id, int userId);
         Task<List<IPO_GroupMaster>> GetGroupsByCompanyAsync(int companyId, int? ipoId);
-        
+        Task<int> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId);
     }
 }

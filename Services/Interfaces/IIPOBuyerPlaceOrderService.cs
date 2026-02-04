@@ -25,9 +25,16 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData<FileResponse>> DownloadSingleFileAsync(int ipoId,int companyId,DownloadFilterType downloadFilterType);
         Task<ReturnData<FileResponse>> DownloadGroupWiseFileAsync(int ipoId,int companyId,DownloadFilterType downloadFilterType);
 
-        Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<ReturnData<ClientWiseBillingResponse>> GetClientWiseBillingPagedListAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<ReturnData> UpdatePreOpenPriceAsync(UpdatePreOpenPriceRequest request, int companyId, int userId);
+        Task<ReturnData> SyncChildrenPreOpenPriceFromParentAsync(int ipoId, int companyId, int userId);
         OrderCategoryOptionsResponse GetOrderCategoryOptions(int orderCategoryType);
-        Task<ReturnData<PagedResult<GroupWiseBillingResponse>>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
+        Task<ReturnData<GroupWiseBillingPagedResponse>> GetGroupWiseBillingListAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
         Task<ReturnData<PagedResult<BuyerOrderResponse>>> GetOrderDetailPagedListByOrderIdAsync(OrderDetailFilterRequest request, int companyId, int ipoId, int orderType,int orderId);
+
+        // Download methods for billing
+        Task<ReturnData<FileResponse>> DownloadGroupWiseBillingExcelAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
+        Task<ReturnData<FileResponse>> DownloadClientWiseBillingExcelAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<ReturnData<FileResponse>> DownloadClientWiseBillingPdfAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
     }
 }
