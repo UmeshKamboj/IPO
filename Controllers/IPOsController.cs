@@ -110,16 +110,17 @@ namespace IPOClient.Controllers
         /// Get IPO name + id list for current company
         /// </summary>
         [HttpGet("getiponames")]
-        public async Task<IActionResult> GetIPONamesByCompanyId()
+        public async Task<IActionResult> GetIPONamesByCompanyId(bool includeDeleted = false)
         {
             var companyId = GetCompanyId();
-            var result = await _ipoService.GetIPONameIdByCompanyAsync(companyId);
+            var result = await (includeDeleted ? _ipoService.GetDeletedIPONameIdByCompanyAsync(companyId) : _ipoService.GetIPONameIdByCompanyAsync(companyId));
 
             if (!result.Success)
                 return StatusCode(result.ResponseCode ?? 400, result);
 
             return Ok(result);
         }
+         
 
         /// <summary>
         /// Update IPO Open Price

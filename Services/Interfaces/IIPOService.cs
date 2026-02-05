@@ -15,7 +15,8 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData> UpdateIPOAsync(int id, CreateIPORequest request, int modifiedByUserId);
         Task<ReturnData> DeleteIPOAsync(int id, int modifiedByUserId);
         Task<ReturnData<List<IPONameIdResponse>>> GetIPONameIdByCompanyAsync(int companyId);
-
+        Task<ReturnData<List<IPONameIdResponse>>> GetDeletedIPONameIdByCompanyAsync(int companyId);
+        
         Task<ReturnData> UpdateIPOOpenPriceAsync(int ipoId, decimal openPrice, int userId);
 
 

@@ -20,13 +20,25 @@ namespace IPOClient.Controllers
         /// <summary>
         /// Get groups with pagination, global search, and filters
         /// </summary>
-        [HttpPost("list")]
-        public async Task<IActionResult> GetPagedAccountingList([FromBody] PaymentListRequest request)
+        //[HttpPost("list")]
+        //public async Task<IActionResult> GetPagedAccountingList([FromBody] PaymentListRequest request)
+        //{
+        //    var companyId = GetCompanyId();
+        //    var result = await _ipoAccountingService.GetPagedAccountingListAsync(request, companyId);
+        //    return StatusCode(result.ResponseCode ?? 500, result);
+        //}
+
+        /// <summary>
+        /// Get accounting data for deleted IPO and deleted Group with IsDeleted checkbox and DateRange filter
+        /// </summary>
+        [HttpPost("deleted-list")]
+        public async Task<IActionResult> GetDeletedAccountingList([FromBody] DeletedAccountingListRequest request)
         {
             var companyId = GetCompanyId();
-            var result = await _ipoAccountingService.GetPagedAccountingListAsync(request, companyId);
+            var result = await _ipoAccountingService.GetDeletedAccountingListAsync(request, companyId);
             return StatusCode(result.ResponseCode ?? 500, result);
         }
+
         private int GetUserId()
         {
             var userIdClaim = User.FindFirst("sub")?.Value;

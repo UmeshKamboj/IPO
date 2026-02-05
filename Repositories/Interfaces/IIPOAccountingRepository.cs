@@ -7,5 +7,6 @@ namespace IPOClient.Repositories.Interfaces
     public interface IIPOAccountingRepository
     {
         Task<PaymentPagedResponse> GetPagedPaymentListAsync(PaymentListRequest request,int companyId);
+        Task<PaymentPagedResponse> GetDeletedAccountingListAsync(DeletedAccountingListRequest request, int companyId);
     }
 }

@@ -125,6 +125,16 @@ namespace IPOClient.Repositories.Implementations
                 .ToListAsync();
         }
 
+        public async Task<List<IPO_GroupMaster>> GetDeletedGroupListAsync(int companyId)
+        {
+            return await _context.IPO_GroupMaster
+                .Include(g => g.IPOMaster)
+                .Where(g => !g.IsActive && g.CompanyId == companyId)
+                .OrderByDescending(g => g.CreatedDate)
+                .ToListAsync();
+        }
+         
+
         public async Task<int> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId)
         {
             int updatedCount = 0;

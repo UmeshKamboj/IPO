@@ -14,6 +14,9 @@ namespace IPOClient.Repositories.Interfaces
         Task<PagedResult<IPO_IPOMaster>> GetIPOsWithFiltersAsync(IPOFilterRequest request, int companyId);
         Task<List<IPO_IPOMaster>> GetIPONameIdByCompanyAsync(int companyId);
 
+
+        Task<List<IPO_IPOMaster>> GetDeletedIPONameIdByCompanyAsync(int companyId);
+
         Task<bool> UpdateIPOOpenPriceAsync(int ipoId,decimal openPrice ,int userId);
         Task<bool> UpdatePreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId);
 

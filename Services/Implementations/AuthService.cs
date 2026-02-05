@@ -151,7 +151,8 @@ namespace IPOClient.Services.Implementations
             {
                 Subject = new ClaimsIdentity(new[]
                 {
-                    new Claim("sub", user.Id.ToString()), 
+                    new Claim("sub", user.Id.ToString()),
+                     new Claim("name", user.FName + " " + user.LName),
                     new Claim("role", user.IsAdmin ? "Admin" : "User"),
                     new Claim("cid", user.CreatedBy.ToString()),
                     new Claim("type", "access") // Token type identifier

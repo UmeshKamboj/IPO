@@ -139,6 +139,23 @@ namespace IPOClient.Repositories.Implementations
 
             return list;
         }
+        // Return IPOs Name and Id for a company
+        public async Task<List<IPO_IPOMaster>> GetDeletedIPONameIdByCompanyAsync(int companyId)
+        {
+            // Return lightweight projection to avoid tracking unnecessary fields.
+            var list = await _dbSet
+                .AsNoTracking()
+                .Where(x => !x.IsActive && x.CompanyId == companyId)
+                .OrderBy(x => x.IPOName)
+                .Select(x => new IPO_IPOMaster
+                {
+                    Id = x.Id,
+                    IPOName = x.IPOName
+                })
+                .ToListAsync();
+
+            return list;
+        } 
 
         public async Task<bool> UpdateIPOOpenPriceAsync(int ipoId, decimal openPrice, int userId)
         {

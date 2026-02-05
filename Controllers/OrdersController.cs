@@ -347,44 +347,44 @@ namespace IPOClient.Controllers
             return Ok(result);
         }
 
-        /// <summary>
-        /// Download Group Wise Billing as Excel
-        /// </summary>
-        [HttpPost("{ipoId}/groupwise/billing/download/excel")]
-        public async Task<IActionResult> DownloadGroupWiseBillingExcel(int ipoId, [FromBody] GroupWiseBillingRequest request)
-        {
-            var companyId = GetCompanyId();
-            var result = await _ipoBuyerPlaceOrderService.DownloadGroupWiseBillingExcelAsync(request, companyId, ipoId);
-            if (!result.Success || result.Data == null)
-                return BadRequest(result);
-            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
-        }
+        ///// <summary>
+        ///// Download Group Wise Billing as Excel
+        ///// </summary>
+        //[HttpPost("{ipoId}/groupwise/billing/download/excel")]
+        //public async Task<IActionResult> DownloadGroupWiseBillingExcel(int ipoId, [FromBody] GroupWiseBillingRequest request)
+        //{
+        //    var companyId = GetCompanyId();
+        //    var result = await _ipoBuyerPlaceOrderService.DownloadGroupWiseBillingExcelAsync(request, companyId, ipoId);
+        //    if (!result.Success || result.Data == null)
+        //        return BadRequest(result);
+        //    return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        //}
 
-        /// <summary>
-        /// Download Client Wise Billing as Excel
-        /// </summary>
-        [HttpPost("{ipoId}/clientwisebilling/download/excel")]
-        public async Task<IActionResult> DownloadClientWiseBillingExcel(int ipoId, [FromBody] OrderDetailFilterRequest request)
-        {
-            var companyId = GetCompanyId();
-            var result = await _ipoBuyerPlaceOrderService.DownloadClientWiseBillingExcelAsync(request, companyId, ipoId);
-            if (!result.Success || result.Data == null)
-                return BadRequest(result);
-            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
-        }
+        ///// <summary>
+        ///// Download Client Wise Billing as Excel
+        ///// </summary>
+        //[HttpPost("{ipoId}/clientwisebilling/download/excel")]
+        //public async Task<IActionResult> DownloadClientWiseBillingExcel(int ipoId, [FromBody] OrderDetailFilterRequest request)
+        //{
+        //    var companyId = GetCompanyId();
+        //    var result = await _ipoBuyerPlaceOrderService.DownloadClientWiseBillingExcelAsync(request, companyId, ipoId);
+        //    if (!result.Success || result.Data == null)
+        //        return BadRequest(result);
+        //    return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        //}
 
-        /// <summary>
-        /// Download Client Wise Billing as PDF
-        /// </summary>
-        [HttpPost("{ipoId}/clientwisebilling/download/pdf")]
-        public async Task<IActionResult> DownloadClientWiseBillingPdf(int ipoId, [FromBody] OrderDetailFilterRequest request)
-        {
-            var companyId = GetCompanyId();
-            var result = await _ipoBuyerPlaceOrderService.DownloadClientWiseBillingPdfAsync(request, companyId, ipoId);
-            if (!result.Success || result.Data == null)
-                return BadRequest(result);
-            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
-        }
+        ///// <summary>
+        ///// Download Client Wise Billing as PDF
+        ///// </summary>
+        //[HttpPost("{ipoId}/clientwisebilling/download/pdf")]
+        //public async Task<IActionResult> DownloadClientWiseBillingPdf(int ipoId, [FromBody] OrderDetailFilterRequest request)
+        //{
+        //    var companyId = GetCompanyId();
+        //    var result = await _ipoBuyerPlaceOrderService.DownloadClientWiseBillingPdfAsync(request, companyId, ipoId);
+        //    if (!result.Success || result.Data == null)
+        //        return BadRequest(result);
+        //    return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        //}
 
         /// <summary>
         /// Order BUY DetailList by OrderID

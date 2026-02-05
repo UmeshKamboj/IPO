@@ -1523,11 +1523,14 @@ namespace IPOClient.Repositories.Implementations
 
             // Calculate total using new formula: Sum((PreOpenPrice - IPOPrice) × AllotedQty - Rate)
             // Use child's PreOpenPrice, fallback to IPO's PreOpenPrice if child has 0
+            // If AllotedQty is 0, Amount should be 0
             var items = await query.ToListAsync();
             var total = items.Sum(c =>
             {
+                var allotedQty = c.AllotedQty ?? 0;
+                if (allotedQty == 0) return 0m;
                 var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
-                return (preOpenPrice - ipoPrice) * (c.AllotedQty ?? 0) - c.IPOOrder.Rate;
+                return (preOpenPrice - ipoPrice) * allotedQty - c.IPOOrder.Rate;
             });
 
             return total;

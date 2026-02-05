@@ -24,14 +24,27 @@ namespace IPOClient.Controllers
         /// Get simple list of all groups for dropdown (ipoGroupId, groupName only)
         /// </summary>
         [HttpGet("list")]
-        public async Task<IActionResult> GetGroups()
+        public async Task<IActionResult> GetGroups(bool includeDeleted = false)
         {
             var companyId = GetCompanyId();
-            var result = await _groupService.GetGroupListAsync(companyId);
+            var result = await (includeDeleted ? _groupService.GetDeletedGroupListAsync(companyId) : _groupService.GetGroupListAsync(companyId));
             if (!result.Success)
                 return StatusCode(result.ResponseCode ?? 500, result);
             return Ok(result);
-        } 
+        }
+
+        ///// <summary>
+        ///// Get simple list of all groups for dropdown (ipoGroupId, groupName only)
+        ///// </summary>
+        //[HttpGet("deleted-list")]
+        //public async Task<IActionResult> GetDeletedGroups()
+        //{
+        //    var companyId = GetCompanyId();
+        //    var result = await _groupService.GetDeletedGroupListAsync(companyId);
+        //    if (!result.Success)
+        //        return StatusCode(result.ResponseCode ?? 500, result);
+        //    return Ok(result);
+        //}
         // --------------------------
         // Advanced Group Operations (with pagination and filters)
         // --------------------------

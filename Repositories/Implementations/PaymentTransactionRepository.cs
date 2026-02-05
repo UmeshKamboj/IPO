@@ -17,8 +17,8 @@ namespace IPOClient.Repositories.Implementations
             var paymentTransaction = new IPO_PaymentTransaction
             {
                 GroupId = request.GroupId,
-                IpoId = request.IpoId,
-                AmountType = request.AmountType,
+                IpoId = request.IpoId > 0 ? request.IpoId : null,
+                AmountType = (int)request.AmountType,
                 Amount = request.Amount,
                 Remark = request.Remark,
                 TransactionDate = request.TransactionDate,
@@ -42,11 +42,11 @@ namespace IPOClient.Repositories.Implementations
             var payment1 = new IPO_PaymentTransaction
             {
                 GroupId = request.GroupId1,
-                IpoId = request.IpoId1,
-                AmountType = request.AmountType1,
+                IpoId = request.IpoId1 > 0 ? request.IpoId1 : null,
+                AmountType = (int)request.AmountType1,
                 Amount = request.Amount,
                 Remark = request.Remark1,
-                TransactionDate = request.TransactionDate,
+                TransactionDate = request.TransactionDate1,
                 CompanyId = companyId,
                 CreatedBy = userId,
                 CreatedOn = DateTime.UtcNow
@@ -54,11 +54,11 @@ namespace IPOClient.Repositories.Implementations
             var payment2 = new IPO_PaymentTransaction
             {
                 GroupId = request.GroupId2,
-                IpoId = request.IpoId2,
-                AmountType = request.AmountType2,
+                IpoId = request.IpoId2 > 0 ? request.IpoId2 : null,
+                AmountType = (int)request.AmountType2,
                 Amount = request.Amount,
                 Remark = request.Remark2,
-                TransactionDate = request.TransactionDate,
+                TransactionDate = request.TransactionDate2,
                 CompanyId = companyId,
                 CreatedBy = userId,
                 CreatedOn = DateTime.UtcNow

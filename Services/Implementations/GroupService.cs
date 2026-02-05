@@ -127,6 +127,27 @@ namespace IPOClient.Services.Implementations
             }
         }
 
+        public async Task<ReturnData<List<GroupListResponse>>> GetDeletedGroupListAsync(int companyId)
+        {
+            try
+            {
+                var groups = await _groupRepository.GetDeletedGroupListAsync(companyId);
+                var responses = groups.Select(g => new GroupListResponse
+                {
+                    IPOGroupId = g.IPOGroupId,
+                    GroupName = g.GroupName ?? string.Empty
+                }).ToList();
+                return ReturnData<List<GroupListResponse>>.SuccessResponse(responses, "Groups retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<List<GroupListResponse>>.ErrorResponse($"Error retrieving groups: {ex.Message}", 500);
+            }
+        }
+
+
+        
+
         public async Task<ReturnData> UpdateTallyStatusAsync(UpdateTallyStatusRequest request, int companyId, int userId)
         {
             try

@@ -62,6 +62,10 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<List<IPOGroupResponse>>.ErrorResponse($"Error retrieving groups: {ex.Message}", 500);
             }
         }
+
+
+         
+
         private IPOGroupResponse MapToResponse(IPO_GroupMaster g)
         {
             return new IPOGroupResponse

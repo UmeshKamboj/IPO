@@ -10,7 +10,7 @@ namespace IPOClient.Models.Entities
         public int PaymentId { get; set; }
 
         public int GroupId { get; set; }
-        public int IpoId { get; set; }
+        public int? IpoId { get; set; }
 
         public int AmountType { get; set; }   // Enum use
 

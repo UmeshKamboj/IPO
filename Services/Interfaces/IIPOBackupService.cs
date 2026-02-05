@@ -5,9 +5,9 @@ namespace IPOClient.Services.Interfaces
 {
     public interface IIPOBackupService
     {
-        Task<ReturnData<FileResponse>> IPOBackupAsync(int ipoId, int companyId);
-        Task<ReturnData<FileResponse>> AllIPOsBackupAsync(int companyId);
+        Task<ReturnData<FileResponse>> IPOBackupAsync(int ipoId, int companyId, string userName);
+        Task<ReturnData<FileResponse>> AllIPOsBackupAsync(int companyId, string userName);
 
-        Task<ReturnData<FileResponse>> IPOAccountingBackupAsync(int companyId);
+        Task<ReturnData<FileResponse>> IPOAccountingBackupAsync(int companyId, string userName);
     }
 }

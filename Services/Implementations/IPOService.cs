@@ -132,6 +132,23 @@ namespace IPOClient.Services.Implementations
                 return ReturnData<List<IPONameIdResponse>>.ErrorResponse($"Error retrieving IPO names: {ex.Message}", 500);
             }
         }
+        // Get deleted Ipo name+id list for a company   
+        public async Task<ReturnData<List<IPONameIdResponse>>> GetDeletedIPONameIdByCompanyAsync(int companyId)
+        { 
+                 try
+            {
+                var ipos = await _ipoRepository.GetDeletedIPONameIdByCompanyAsync(companyId);
+                var dtoList = ipos?
+                    .Select(i => new IPONameIdResponse { Id = i.Id, IPOName = i.IPOName })
+                    .ToList() ?? new List<IPONameIdResponse>();
+                return ReturnData<List<IPONameIdResponse>>.SuccessResponse(dtoList, "Deleted IPO names retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData<List<IPONameIdResponse>>.ErrorResponse($"Error retrieving deleted IPO names: {ex.Message}", 500);
+            }
+        }
+
         // MAP ENTITY TO RESPONSE DTO
         private CreateIPOResponse MapToIPOResponse(IPO_IPOMaster ipo)
         {

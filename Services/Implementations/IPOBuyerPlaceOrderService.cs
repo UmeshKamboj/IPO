@@ -550,7 +550,8 @@ namespace IPOClient.Services.Implementations
             var allotedQty = child.AllotedQty ?? 0;
 
             // New Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
-            var amount = (preOpenPrice - ipoPriceFinal) * allotedQty - rate;
+            // If AllotedQty is 0, Amount should be 0
+            var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPriceFinal) * allotedQty - rate;
 
             return new BuyerOrderResponse
             {
@@ -735,7 +736,9 @@ namespace IPOClient.Services.Implementations
                     {
                         GroupId = first.GroupId,
                         GroupName = first.Group?.GroupName ?? "-",
-                        TallyStatus = first.Group?.TallyStatus ?? false
+                        TallyStatus = first.Group?.TallyStatus ?? false,
+                        InversotTypeId= first.IPOOrder.InvestorType,
+                        OrderCategoryId= first.IPOOrder.OrderCategory
                     };
 
                     foreach (var row in grp)
@@ -752,9 +755,10 @@ namespace IPOClient.Services.Implementations
                         var rate = order.Rate;
 
                         // New Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+                        // If AllotedQty is 0, Amount should be 0
                         // For SELL orders, negate the amount
-                        var amount = (preOpenPrice - ipoPrice) * allotedQty - rate;
-                        if (order.OrderType == (int)IPOOrderType.SELL)
+                        var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
                             amount = -amount;
 
                         // Count = number of child rows (+1 for BUY, -1 for SELL)
@@ -774,6 +778,8 @@ namespace IPOClient.Services.Implementations
                         // ===== PREMIUM
                         if (order.OrderCategory == (int)IPOOrderCategory.Premium)
                         {
+                            res.Premium.InvestorTypeId = order.InvestorType;
+                            res.Premium.OrderCategoryId = order.OrderCategory;
                             res.Premium.Shares += allotedDelta;
                             res.Premium.Billing += amount;
                         }
@@ -783,6 +789,8 @@ namespace IPOClient.Services.Implementations
                             order.PremiumStrikePrice != "Application" &&
                             order.PremiumStrikePrice != "Premium")
                         {
+                            res.Options.InvestorTypeId = order.InvestorType;
+                            res.Options.OrderCategoryId = order.OrderCategory;
                             if (order.OrderType == (int)IPOOrderType.BUY)
                                 res.Options.CallAmount += amount;
                             else
@@ -836,6 +844,8 @@ namespace IPOClient.Services.Implementations
                 (int)IPOInvestorType.SHNI => res.SHNI,
                 _ => res.BHNI
             };
+            target.InvestorTypeId = order.InvestorType;
+            target.OrderCategoryId = order.OrderCategory;
             target.Count += countDelta;
             target.Alloted += allotedDelta;
             target.Billing += amount;
@@ -850,6 +860,8 @@ namespace IPOClient.Services.Implementations
                 _ => res.SubjectTo_BHNI
             };
 
+            target.InvestorTypeId = order.InvestorType;
+            target.OrderCategoryId = order.OrderCategory;
             target.Count += countDelta;
             target.Alloted += allotedDelta;
             target.Billing += amount;
@@ -938,8 +950,9 @@ namespace IPOClient.Services.Implementations
                         var allotedQty = row.AllotedQty ?? 0;
                         var preOpenPrice = row.PreOpenPrice > 0 ? row.PreOpenPrice : ipoPreOpenPrice;
                         var rate = order.Rate;
-                        var amount = (preOpenPrice - ipoPrice) * allotedQty - rate;
-                        if (order.OrderType == (int)IPOOrderType.SELL)
+                        // If AllotedQty is 0, Amount should be 0
+                        var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
                             amount = -amount;
 
                         var countDelta = order.OrderType == (int)IPOOrderType.BUY ? 1 : -1;
@@ -1092,7 +1105,11 @@ namespace IPOClient.Services.Implementations
                     var order = child.IPOOrder;
                     var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
                     var allotedQty = child.AllotedQty ?? 0;
-                    var amount = (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+                    // Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+                    // If AllotedQty is 0, Amount should be 0
+                    var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+                    if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                        amount = -amount;
 
                     worksheet.Cell(row, 1).Value = srNo++;
                     worksheet.Cell(row, 2).Value = child.Group?.GroupName ?? "-";
@@ -1191,7 +1208,10 @@ namespace IPOClient.Services.Implementations
                     var order = child.IPOOrder;
                     var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
                     var allotedQty = child.AllotedQty ?? 0;
-                    var amount = (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+                    // If AllotedQty is 0, Amount should be 0
+                    var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+                    if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                        amount = -amount;
 
                     table.AddCell(new PdfPCell(new Phrase(srNo++.ToString(), cellFont)) { Padding = 2 });
                     table.AddCell(new PdfPCell(new Phrase(child.Group?.GroupName ?? "-", cellFont)) { Padding = 2 });

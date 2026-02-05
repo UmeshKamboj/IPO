@@ -25,7 +25,8 @@ namespace IPOClient.Controllers
         public async Task<IActionResult> IPOBackupFile(int ipoId)
         {
             var companyId = GetCompanyId();
-            var result = await _ipoBackupService.IPOBackupAsync(ipoId, companyId);
+            var userName = GetUserName();
+            var result = await _ipoBackupService.IPOBackupAsync(ipoId, companyId, userName);
             if (!result.Success || result.Data == null)
                 return BadRequest(result);
             return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
@@ -38,7 +39,8 @@ namespace IPOClient.Controllers
         public async Task<IActionResult> AllIPOBackupFile()
         {
             var companyId = GetCompanyId();
-            var result = await _ipoBackupService.AllIPOsBackupAsync(companyId);
+            var userName = GetUserName();
+            var result = await _ipoBackupService.AllIPOsBackupAsync(companyId, userName);
             if (!result.Success || result.Data == null)
                 return BadRequest(result);
             return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
@@ -50,8 +52,9 @@ namespace IPOClient.Controllers
         [HttpGet("accounting")]
         public async Task<IActionResult> AllIPOAccountingBackupFile()
         {
+            var userName = GetUserName();
             var companyId = GetCompanyId();
-            var result = await _ipoBackupService.IPOAccountingBackupAsync(companyId);
+            var result = await _ipoBackupService.IPOAccountingBackupAsync(companyId, userName);
             if (!result.Success || result.Data == null)
                 return BadRequest(result);
             return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
@@ -62,7 +65,11 @@ namespace IPOClient.Controllers
             var userIdClaim = User.FindFirst("sub")?.Value;
             return int.TryParse(userIdClaim, out var userId) ? userId : 0;
         }
-
+        private string GetUserName()
+        {
+            var userNameClaim = User.FindFirst("name")?.Value;
+            return userNameClaim ?? string.Empty;
+        }
         private int GetCompanyId()
         {
             var companyIdClaim = User.FindFirst("cid")?.Value;

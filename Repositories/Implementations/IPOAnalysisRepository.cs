@@ -42,6 +42,7 @@ namespace IPOClient.Repositories.Implementations
                 .ToListAsync();
 
             // Group and calculate using new formula: (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+            // If AllotedQty is 0, Amount should be 0
             var grouped = childOrders
                 .GroupBy(c => new { c.IPOOrder.OrderCategory, c.IPOOrder.InvestorType, c.IPOOrder.OrderType })
                 .Select(g =>
@@ -49,8 +50,10 @@ namespace IPOClient.Repositories.Implementations
                     var count = g.Count();
                     var totalAmount = g.Sum(c =>
                     {
+                        var allotedQty = c.AllotedQty ?? 0;
+                        if (allotedQty == 0) return 0m;
                         var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
-                        return (preOpenPrice - ipoPrice) * (c.AllotedQty ?? 0) - c.IPOOrder.Rate;
+                        return (preOpenPrice - ipoPrice) * allotedQty - c.IPOOrder.Rate;
                     });
                     var avgRate = count > 0 ? totalAmount / count : 0;
 

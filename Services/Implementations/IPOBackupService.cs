@@ -1,10 +1,10 @@
-﻿using IPOClient.Models.Requests.IPOMaster.Response;
+﻿using ClosedXML.Excel;
+using IPOClient.Models.Requests.IPOMaster.Response;
 using IPOClient.Models.Responses;
 using IPOClient.Repositories.Implementations;
 using IPOClient.Repositories.Interfaces;
 using IPOClient.Services.Interfaces;
 using System.IO.Compression;
-using System.Text;
 
 namespace IPOClient.Services.Implementations
 {
@@ -18,7 +18,7 @@ namespace IPOClient.Services.Implementations
             _ipoRepository = ipoRepository;
         }
       
-        public async Task<ReturnData<FileResponse>> IPOBackupAsync(int ipoId, int companyId)
+        public async Task<ReturnData<FileResponse>> IPOBackupAsync(int ipoId, int companyId,string userName)
         {
             try
             {
@@ -29,8 +29,8 @@ namespace IPOClient.Services.Implementations
                     var file = new FileResponse
                     {
                         Bytes = bytes,
-                        ContentType = "text/csv",
-                        FileName = $"{ipo?.IPOName ?? ""} {DateTime.Now:dd-MM-yyyy-HH-mm}.csv"
+                        ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        FileName = $"{userName}-{ipo?.IPOName ?? ""}-{DateTime.Now:dd-MM-yyyy-HH-mm}.xlsx"
                     };
                     return ReturnData<FileResponse>.SuccessResponse(file, "IPO backup successfully", 200);
                 }
@@ -46,7 +46,7 @@ namespace IPOClient.Services.Implementations
            
          
         }
-        public async Task<ReturnData<FileResponse>> AllIPOsBackupAsync(int companyId)
+        public async Task<ReturnData<FileResponse>> AllIPOsBackupAsync(int companyId, string userName)
         {
             try
             {
@@ -60,24 +60,52 @@ namespace IPOClient.Services.Implementations
                     foreach (var ipo in ipoDataList)
                     {
                         var ipoData = await _ipoRepository.GetByIdAsync(ipo.IPOId, companyId);
-                        var sb = new StringBuilder();
-                        sb.AppendLine("Group,Order Type,Order Category,Investor Type,Qty,Rate,Amount,Date,Time");
+                        var safeName = ipoData?.IPOName ?? "";
+                        var ipoPrice = ipoData?.IPO_Upper_Price_Band ?? 0;
+                        var ipoPreOpenPrice = ipoData?.OpenIPOPrice ?? 0;
 
-                        foreach (var row in ipo.Orders)
+                        using var workbook = new XLWorkbook();
+                        var worksheet = workbook.Worksheets.Add("Orders");
+
+                        // Headers
+                        var headers = new[] { "Group", "OrderType", "Category", "Investor Type", "Qty", "Rate", "Amount", "Order Date", "Order Time" };
+                        for (int i = 0; i < headers.Length; i++)
                         {
-                            sb.AppendLine(
-                                $"{row.GroupName},{row.OrderType},{row.OrderCategory}," +
-                                $"{row.InvestorType},{row.Quantity},{row.Rate}," +
-                                $"{row.Amount},{row.Date},{row.Time}"
-                            );
+                            worksheet.Cell(1, i + 1).Value = headers[i];
+                            worksheet.Cell(1, i + 1).Style.Font.Bold = true;
+                            worksheet.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightBlue;
                         }
 
-                        var safeName = ipoData?.IPOName ?? "";
-                        var entry = zip.CreateEntry($"{safeName} {DateTime.Now:dd-MM-yyyy-HH-mm}.csv");
+                        // Data rows
+                        int row = 2;
+                        foreach (var orderRow in ipo.Orders)
+                        {
+                            // Get PreOpenPrice: Use child's PreOpenPrice, fallback to IPO's if child has 0
+                            var preOpenPrice = orderRow.PreOpenPrice > 0 ? orderRow.PreOpenPrice : ipoPreOpenPrice;
 
+                            // Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+                            // If AllotedQty is 0, Amount should be 0
+                            var amount = orderRow.AllotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * orderRow.AllotedQty - orderRow.Rate;
+                            if (orderRow.AllotedQty != 0 && orderRow.OrderTypeId == 2) // SELL
+                                amount = -amount;
+
+                            worksheet.Cell(row, 1).Value = orderRow.GroupName;
+                            worksheet.Cell(row, 2).Value = orderRow.OrderType;
+                            worksheet.Cell(row, 3).Value = orderRow.OrderCategory;
+                            worksheet.Cell(row, 4).Value = orderRow.InvestorType;
+                            worksheet.Cell(row, 5).Value = orderRow.Quantity;
+                            worksheet.Cell(row, 6).Value = orderRow.Rate;
+                            worksheet.Cell(row, 7).Value = amount;
+                            worksheet.Cell(row, 8).Value = orderRow.Date;
+                            worksheet.Cell(row, 9).Value = orderRow.Time;
+                            row++;
+                        }
+
+                        worksheet.Columns().AdjustToContents();
+
+                        var entry = zip.CreateEntry($"{userName}-{safeName}-{DateTime.Now:dd-MM-yyyy-HH-mm}.xlsx");
                         using var entryStream = entry.Open();
-                        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-                        entryStream.Write(bytes, 0, bytes.Length);
+                        workbook.SaveAs(entryStream);
                     }
                 }
                 var file = new FileResponse
@@ -94,7 +122,7 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-        public async Task<ReturnData<FileResponse>> IPOAccountingBackupAsync(int companyId)
+        public async Task<ReturnData<FileResponse>> IPOAccountingBackupAsync(int companyId, string userName)
         {
             try
             {
@@ -105,7 +133,7 @@ namespace IPOClient.Services.Implementations
                     {
                         Bytes = bytes,
                         ContentType = "text/csv",
-                        FileName = $"Accounting-Backup {DateTime.Now:dd-MM-yyyy-HH-mm}.csv"
+                        FileName = $"{userName}-Accounting-Backup {DateTime.Now:dd-MM-yyyy-HH-mm}.csv"
                     };
                     return ReturnData<FileResponse>.SuccessResponse(file, "IPO backup  accounting successfully", 200);
                 }

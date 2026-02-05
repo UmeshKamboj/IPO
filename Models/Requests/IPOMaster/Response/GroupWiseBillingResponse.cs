@@ -18,6 +18,8 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
     public class GroupWiseBillingResponse
     {
         public int GroupId { get; set; }
+        public int OrderCategoryId { get; set; }
+        public int InversotTypeId { get; set; }
         public string GroupName { get; set; }
 
         /// <summary>
@@ -29,9 +31,9 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public CategoryBilling SHNI { get; set; } = new();
         public CategoryBilling BHNI { get; set; } = new();
 
-        public CategoryBilling_SubjectTo SubjectTo_Retail { get; set; } = new();
-        public CategoryBilling_SubjectTo SubjectTo_SHNI { get; set; } = new();
-        public CategoryBilling_SubjectTo SubjectTo_BHNI { get; set; } = new();
+        public CategoryBilling SubjectTo_Retail { get; set; } = new();
+        public CategoryBilling SubjectTo_SHNI { get; set; } = new();
+        public CategoryBilling SubjectTo_BHNI { get; set; } = new();
 
         public PremiumBilling Premium { get; set; } = new();
         public OptionBilling Options { get; set; } = new();
@@ -39,23 +41,28 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public int TotalShares { get; set; }
         public decimal TotalAmount { get; set; }
     }
+
     public class CategoryBilling
     {
+        public int InvestorTypeId { get; set; }
+        public int OrderCategoryId { get; set; }
         public int Count { get; set; }
         public int Alloted { get; set; }
         public decimal Billing { get; set; }
     }
 
-    public class CategoryBilling_SubjectTo : CategoryBilling { }
-
     public class PremiumBilling
     {
+        public int InvestorTypeId { get; set; }
+        public int OrderCategoryId { get; set; }
         public int Shares { get; set; }
         public decimal Billing { get; set; }
     }
 
     public class OptionBilling
     {
+        public int InvestorTypeId { get; set; }
+        public int OrderCategoryId { get; set; }
         public decimal CallAmount { get; set; }
         public decimal PutAmount { get; set; }
     }
