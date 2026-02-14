@@ -182,7 +182,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = "sub" // Explicitly set name claim type
         };
 
-        // Enable automatic token refresh
+        // Handle token expiration event
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context =>
@@ -222,8 +222,8 @@ app.UseMiddleware<ApiLoggingMiddleware>();
 
 app.UseAuthentication();
 
-// Auto Token Refresh Middleware (after authentication, before authorization)
-app.UseMiddleware<AutoTokenRefreshMiddleware>();
+// TODO: Re-enable auto token refresh middleware later
+// app.UseMiddleware<AutoTokenRefreshMiddleware>();
 
 app.UseAuthorization();
 

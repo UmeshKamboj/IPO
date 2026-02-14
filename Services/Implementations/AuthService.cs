@@ -44,14 +44,15 @@ namespace IPOClient.Services.Implementations
                 if (user.ExpiryDate.HasValue && user.ExpiryDate < DateTime.UtcNow)
                     return ReturnData<LoginResponse>.ErrorResponse("Your account has expired", 401);
 
-                // Generate access token (15 min) and refresh token (7 days)
+                // Generate access token (24 hours)
                 var accessToken = GenerateAccessToken(user);
-                var refreshToken = GenerateRefreshToken(user);
+                // TODO: Re-enable refresh token logic later
+                // var refreshToken = GenerateRefreshToken(user);
 
                 var response = new LoginResponse
                 {
                     Token = accessToken,
-                    RefreshToken = refreshToken ,
+                    // RefreshToken = refreshToken,
                     User = new UserResponse
                     {
                         Id = user.Id,
@@ -79,63 +80,59 @@ namespace IPOClient.Services.Implementations
             _httpContextAccessor.HttpContext?.Session.Clear();
         }
 
-        public async Task<ReturnData<LoginResponse>> RefreshTokenAsync()
-        {
-            try
-            {
-                var httpContext = _httpContextAccessor.HttpContext;
-                if (httpContext == null)
-                    return ReturnData<LoginResponse>.ErrorResponse("Invalid request context", 400);
-
-                // Get user ID from current refresh token claims
-                var userIdClaim = httpContext.User.FindFirst("sub")?.Value;
-                var tokenType = httpContext.User.FindFirst("type")?.Value;
-
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
-                    return ReturnData<LoginResponse>.ErrorResponse("Invalid token", 401);
-
-                // Verify this is a refresh token, not an access token
-                if (tokenType != "refresh")
-                    return ReturnData<LoginResponse>.ErrorResponse("Invalid token type. Use refresh token.", 401);
-
-                // Fetch user from database
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                    return ReturnData<LoginResponse>.ErrorResponse("User not found", 401);
-
-                // Check if account is expired
-                if (user.ExpiryDate.HasValue && user.ExpiryDate < DateTime.UtcNow)
-                    return ReturnData<LoginResponse>.ErrorResponse("Your account has expired", 401);
-
-                // Generate new access token and refresh token (rotation)
-                var newAccessToken = GenerateAccessToken(user);
-                var newRefreshToken = GenerateRefreshToken(user);
-
-                var response = new LoginResponse
-                {
-                    Token = newAccessToken,
-                    RefreshToken = newRefreshToken,
-                    User = new UserResponse
-                    {
-                        Id = user.Id,
-                        FName = user.FName,
-                        LName = user.LName,
-                        Email = user.Email,
-                        Phone = user.Phone,
-                        IsAdmin = user.IsAdmin,
-                        CreatedBy = user.CreatedBy,
-                        CreatedDate = user.CreatedDate,
-                        ExpiryDate = user.ExpiryDate
-                    }
-                };
-
-                return ReturnData<LoginResponse>.SuccessResponse(response, "Token refreshed successfully", 200, user.Id);
-            }
-            catch (Exception ex)
-            {
-                return ReturnData<LoginResponse>.ErrorResponse($"Token refresh error: {ex.Message}", 500);
-            }
-        }
+        // TODO: Re-enable refresh token logic later
+        // public async Task<ReturnData<LoginResponse>> RefreshTokenAsync()
+        // {
+        //     try
+        //     {
+        //         var httpContext = _httpContextAccessor.HttpContext;
+        //         if (httpContext == null)
+        //             return ReturnData<LoginResponse>.ErrorResponse("Invalid request context", 400);
+        //
+        //         var userIdClaim = httpContext.User.FindFirst("sub")?.Value;
+        //         var tokenType = httpContext.User.FindFirst("type")?.Value;
+        //
+        //         if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+        //             return ReturnData<LoginResponse>.ErrorResponse("Invalid token", 401);
+        //
+        //         if (tokenType != "refresh")
+        //             return ReturnData<LoginResponse>.ErrorResponse("Invalid token type. Use refresh token.", 401);
+        //
+        //         var user = await _userRepository.GetByIdAsync(userId);
+        //         if (user == null)
+        //             return ReturnData<LoginResponse>.ErrorResponse("User not found", 401);
+        //
+        //         if (user.ExpiryDate.HasValue && user.ExpiryDate < DateTime.UtcNow)
+        //             return ReturnData<LoginResponse>.ErrorResponse("Your account has expired", 401);
+        //
+        //         var newAccessToken = GenerateAccessToken(user);
+        //         var newRefreshToken = GenerateRefreshToken(user);
+        //
+        //         var response = new LoginResponse
+        //         {
+        //             Token = newAccessToken,
+        //             RefreshToken = newRefreshToken,
+        //             User = new UserResponse
+        //             {
+        //                 Id = user.Id,
+        //                 FName = user.FName,
+        //                 LName = user.LName,
+        //                 Email = user.Email,
+        //                 Phone = user.Phone,
+        //                 IsAdmin = user.IsAdmin,
+        //                 CreatedBy = user.CreatedBy,
+        //                 CreatedDate = user.CreatedDate,
+        //                 ExpiryDate = user.ExpiryDate
+        //             }
+        //         };
+        //
+        //         return ReturnData<LoginResponse>.SuccessResponse(response, "Token refreshed successfully", 200, user.Id);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         return ReturnData<LoginResponse>.ErrorResponse($"Token refresh error: {ex.Message}", 500);
+        //     }
+        // }
 
         private string GenerateAccessToken(IPO_UserMaster user)
         {
@@ -169,33 +166,34 @@ namespace IPOClient.Services.Implementations
             return tokenHandler.WriteToken(token);
         }
 
-        private string GenerateRefreshToken(IPO_UserMaster user)
-        {
-            var jwtSettings = _configuration.GetSection("JwtSettings");
-            var secretKey = jwtSettings["SecretKey"];
-            var issuer = jwtSettings["Issuer"];
-            var audience = jwtSettings["Audience"];
-            var expirationDays = int.Parse(jwtSettings["RefreshTokenExpirationDays"] ?? "7");
-
-            var key = Encoding.ASCII.GetBytes(secretKey ?? "default-secret-key");
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(new[]
-                {
-                    new Claim("sub", user.Id.ToString()),
-                    new Claim("type", "refresh") // Token type identifier
-                }),
-                Expires = DateTime.UtcNow.AddDays(expirationDays),
-                Issuer = issuer,
-                Audience = audience,
-                SigningCredentials = new SigningCredentials(
-                    new SymmetricSecurityKey(key),
-                    SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
-        }
+        // TODO: Re-enable refresh token generation later
+        // private string GenerateRefreshToken(IPO_UserMaster user)
+        // {
+        //     var jwtSettings = _configuration.GetSection("JwtSettings");
+        //     var secretKey = jwtSettings["SecretKey"];
+        //     var issuer = jwtSettings["Issuer"];
+        //     var audience = jwtSettings["Audience"];
+        //     var expirationDays = int.Parse(jwtSettings["RefreshTokenExpirationDays"] ?? "7");
+        //
+        //     var key = Encoding.ASCII.GetBytes(secretKey ?? "default-secret-key");
+        //     var tokenHandler = new JwtSecurityTokenHandler();
+        //     var tokenDescriptor = new SecurityTokenDescriptor
+        //     {
+        //         Subject = new ClaimsIdentity(new[]
+        //         {
+        //             new Claim("sub", user.Id.ToString()),
+        //             new Claim("type", "refresh")
+        //         }),
+        //         Expires = DateTime.UtcNow.AddDays(expirationDays),
+        //         Issuer = issuer,
+        //         Audience = audience,
+        //         SigningCredentials = new SigningCredentials(
+        //             new SymmetricSecurityKey(key),
+        //             SecurityAlgorithms.HmacSha256Signature)
+        //     };
+        //
+        //     var token = tokenHandler.CreateToken(tokenDescriptor);
+        //     return tokenHandler.WriteToken(token);
+        // }
     }
 }

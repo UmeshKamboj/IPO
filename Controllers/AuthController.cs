@@ -43,28 +43,18 @@ namespace IPOClient.Controllers
             return Ok(ReturnData.SuccessResponse("Logged out successfully", 200));
         }
 
-        /// <summary>
-        /// Refresh JWT token to extend session
-        /// </summary>
-        /// <remarks>
-        /// Regenerates a new JWT token with extended expiration time (24 hours) for the currently authenticated user.
-        /// Requires a valid existing token in the Authorization header.
-        /// </remarks>
-        /// <returns>New JWT token with user details</returns>
-        /// <response code="200">Token refreshed successfully</response>
-        /// <response code="401">Unauthorized - token invalid, expired, or user account expired</response>
-        /// <response code="500">Server error</response>
-        [HttpPost("refresh-token")]
-        [Authorize]
-        public async Task<IActionResult> RefreshToken()
-        {
-            var result = await _authService.RefreshTokenAsync();
-
-            if (!result.Success)
-                return StatusCode(result.ResponseCode ?? 400, result);
-
-            return Ok(result);
-        }
+        // TODO: Re-enable refresh token endpoint later
+        // [HttpPost("refresh-token")]
+        // [Authorize]
+        // public async Task<IActionResult> RefreshToken()
+        // {
+        //     var result = await _authService.RefreshTokenAsync();
+        //
+        //     if (!result.Success)
+        //         return StatusCode(result.ResponseCode ?? 400, result);
+        //
+        //     return Ok(result);
+        // }
     }
 }
 

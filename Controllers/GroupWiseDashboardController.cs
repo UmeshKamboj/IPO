@@ -34,6 +34,20 @@ namespace IPOClient.Controllers
             return StatusCode(statusCode, result);
         }
 
+        /// <summary>
+        /// Download Group Wise Dashboard as Excel
+        /// </summary>
+        /// <returns>Excel file</returns>
+        [HttpGet("download")]
+        public async Task<IActionResult> DownloadGroupWiseDashboardExcel()
+        {
+            var companyId = GetCompanyId();
+            var result = await _groupwisedashboardService.DownloadGroupWiseDashboardExcelAsync(companyId);
+            if (!result.Success || result.Data == null)
+                return BadRequest(result);
+            return File(result.Data.Bytes, result.Data.ContentType, result.Data.FileName);
+        }
+
         private int GetUserId()
         {
             var userIdClaim = User.FindFirst("sub")?.Value;

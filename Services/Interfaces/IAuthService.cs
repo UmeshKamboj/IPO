@@ -7,6 +7,7 @@ namespace IPOClient.Services.Interfaces
     {
         Task<ReturnData<LoginResponse>> LoginAsync(LoginRequest request);
         Task LogoutAsync();
-        Task<ReturnData<LoginResponse>> RefreshTokenAsync();
+        // TODO: Re-enable refresh token later
+        // Task<ReturnData<LoginResponse>> RefreshTokenAsync();
     }
 }

@@ -6,6 +6,7 @@ namespace IPOClient.Repositories.Interfaces
     public interface IGroupWiseDashboardRepository
     {
         Task<PagedResult<GroupIpoSummaryRow>> GetGroupWiseDashboardSummaryAsync(GroupWiseSummaryRequest request, int companyId);
+        Task<List<GroupIpoSummaryRow>> GetAllGroupWiseDashboardSummaryAsync(int companyId);
         Task<List<GroupIpoBillingRow>> GetOrderBillingByGroupAsync(List<int> groupIds, int companyId);
     }
 }

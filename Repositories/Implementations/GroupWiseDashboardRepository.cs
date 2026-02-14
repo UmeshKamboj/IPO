@@ -21,6 +21,13 @@ namespace IPOClient.Repositories.Implementations
             var groupQuery = _context.IPO_GroupMaster
                 .Where(g => g.CompanyId == companyId && g.IsActive);
 
+            // Apply text search on group name if provided
+            if (!string.IsNullOrWhiteSpace(request.SearchValue))
+            {
+                var search = request.SearchValue.Trim();
+                groupQuery = groupQuery.Where(g => g.GroupName.Contains(search));
+            }
+
             var totalGroups = await groupQuery.CountAsync();
 
             var pagedGroups = await groupQuery
@@ -95,6 +102,81 @@ namespace IPOClient.Repositories.Implementations
 
             return new PagedResult<GroupIpoSummaryRow>(result, totalGroups, request.Skip, request.PageSize);
 
+        }
+
+        public async Task<List<GroupIpoSummaryRow>> GetAllGroupWiseDashboardSummaryAsync(int companyId)
+        {
+            // ALL GROUPS
+            var allGroups = await _context.IPO_GroupMaster
+                .Where(g => g.CompanyId == companyId && g.IsActive)
+                .OrderBy(g => g.GroupName)
+                .Select(g => new { g.IPOGroupId, g.GroupName })
+                .ToListAsync();
+
+            var groupIds = allGroups.Select(x => x.IPOGroupId).ToList();
+
+            // ALL IPOS
+            var ipos = await _context.IPO_IPOMaster
+                .Where(i => i.CompanyId == companyId && i.IsActive)
+                .Select(i => new { i.Id, i.IPOName })
+                .ToListAsync();
+
+            // TRANSACTION SUMMARY
+            var summary = await _context.PaymentTransactions
+                .Where(x => x.CompanyId == companyId
+                         && groupIds.Contains(x.GroupId))
+                .GroupBy(x => new { x.GroupId, x.IpoId })
+                .Select(g => new
+                {
+                    g.Key.GroupId,
+                    g.Key.IpoId,
+                    Debit = g.Where(x => x.AmountType == (int)AmountType.Debit)
+                             .Sum(x => x.Amount),
+                    Credit = g.Where(x => x.AmountType == (int)AmountType.Credit)
+                              .Sum(x => x.Amount)
+                })
+                .ToListAsync();
+
+            // JV TRANSACTION SUMMARY
+            var jvSummary = await _context.PaymentTransactions
+                .Where(x => x.CompanyId == companyId
+                         && groupIds.Contains(x.GroupId)
+                         && x.IsJVTransaction)
+                .GroupBy(x => new { x.GroupId, x.IpoId })
+                .Select(g => new
+                {
+                    g.Key.GroupId,
+                    g.Key.IpoId,
+                    JV = g.Sum(x => x.Amount)
+                })
+                .ToListAsync();
+
+            // MERGE (ZERO FILL)
+            var result = new List<GroupIpoSummaryRow>();
+
+            foreach (var g in allGroups)
+            {
+                foreach (var ipo in ipos)
+                {
+                    var match = summary.FirstOrDefault(x =>
+                        x.GroupId == g.IPOGroupId && x.IpoId == ipo.Id);
+                    var jvMatch = jvSummary.FirstOrDefault(x =>
+                        x.GroupId == g.IPOGroupId && x.IpoId == ipo.Id);
+
+                    result.Add(new GroupIpoSummaryRow
+                    {
+                        GroupId = g.IPOGroupId,
+                        GroupName = g.GroupName,
+                        IpoId = ipo.Id,
+                        IpoName = ipo.IPOName,
+                        Debit = match?.Debit ?? 0,
+                        Credit = match?.Credit ?? 0,
+                        JV = jvMatch?.JV ?? 0
+                    });
+                }
+            }
+
+            return result;
         }
 
         public async Task<List<GroupIpoBillingRow>> GetOrderBillingByGroupAsync(List<int> groupIds, int companyId)
