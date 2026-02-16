@@ -13,6 +13,15 @@ namespace IPOClient.Repositories.Interfaces
         Task<IPO_Analysis?> GetAnalysisAsync(int ipoId, int analysisType, int companyId);
         Task<List<IPO_Analysis>> GetAllAnalysesAsync(int ipoId, int companyId);
         Task<int> UpsertAnalysisAsync(IPO_Analysis analysis);
+        Task<ActualAllottedQtySummary> GetActualAllottedQtySummaryAsync(int ipoId, int companyId);
+    }
+
+    public class ActualAllottedQtySummary
+    {
+        public decimal Total { get; set; }
+        public decimal Retail { get; set; }
+        public decimal SHNI { get; set; }
+        public decimal BHNI { get; set; }
     }
 
     /// <summary>

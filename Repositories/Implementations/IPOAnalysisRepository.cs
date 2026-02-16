@@ -210,6 +210,49 @@ namespace IPOClient.Repositories.Implementations
                 .ToListAsync();
         }
 
+        public async Task<ActualAllottedQtySummary> GetActualAllottedQtySummaryAsync(int ipoId, int companyId)
+        {
+            var summary = new ActualAllottedQtySummary();
+
+            var grouped = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder).ThenInclude(o => o.BuyerMaster)
+                .Where(c =>
+                    c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                    c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                    c.IPOOrder.BuyerMaster.IsActive &&
+                    !c.IPOOrder.BuyerMaster.IsDeleted &&
+                    !c.IPOOrder.IsDeleted &&
+                    !c.IsDeleted &&
+                    (c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
+                     c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo))
+                .GroupBy(c => c.IPOOrder.InvestorType)
+                .Select(g => new
+                {
+                    InvestorType = g.Key,
+                    TotalAllotted = g.Sum(x => x.AllotedQty ?? 0)
+                })
+                .ToListAsync();
+
+            foreach (var row in grouped)
+            {
+                switch ((IPOInvestorType)row.InvestorType)
+                {
+                    case IPOInvestorType.Retail:
+                        summary.Retail = row.TotalAllotted;
+                        break;
+                    case IPOInvestorType.SHNI:
+                        summary.SHNI = row.TotalAllotted;
+                        break;
+                    case IPOInvestorType.BHNI:
+                        summary.BHNI = row.TotalAllotted;
+                        break;
+                }
+            }
+
+            summary.Total = summary.Retail + summary.SHNI + summary.BHNI;
+            return summary;
+        }
+
         public async Task<int> UpsertAnalysisAsync(IPO_Analysis analysis)
         {
             var existing = await _context.Set<IPO_Analysis>()

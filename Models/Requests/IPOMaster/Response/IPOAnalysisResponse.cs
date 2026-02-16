@@ -17,6 +17,12 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public decimal SpotPremium { get; set; }
         public decimal? SpotPrice { get; set; }
 
+        // Read-only: Actual allotted qty aggregated from DB (sum of AllotedQty per InvestorType)
+        public decimal DbActualAllottedQty_Total { get; set; }
+        public decimal DbActualAllottedQty_Retail { get; set; }
+        public decimal DbActualAllottedQty_SHNI { get; set; }
+        public decimal DbActualAllottedQty_BHNI { get; set; }
+
         // Per investor type subscription data (Tab 1 & 2)
         public Dictionary<string, SubscriptionBlock> Subscriptions { get; set; } = new();
 

@@ -56,6 +56,16 @@ namespace IPOClient.Services.Implementations
                     SpotPrice = request.SpotPrice
                 };
 
+                // Populate read-only actual allotted qty from DB for Tab 2/3
+                if (request.AnalysisType >= 2)
+                {
+                    var allottedSummary = await _analysisRepository.GetActualAllottedQtySummaryAsync(request.IPOId, companyId);
+                    response.DbActualAllottedQty_Total = allottedSummary.Total;
+                    response.DbActualAllottedQty_Retail = allottedSummary.Retail;
+                    response.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
+                    response.DbActualAllottedQty_BHNI = allottedSummary.BHNI;
+                }
+
                 // Copy count tables from order summary
                 response.KostakCount = orderSummary.Kostak;
                 response.SubjectToCount = orderSummary.SubjectTo;
@@ -153,6 +163,16 @@ namespace IPOClient.Services.Implementations
                         response.ProfitMargin = analysis.ProfitMargin ?? 0;
                         response.SpotPremium = analysis.SpotPremium ?? 0;
                         response.SpotPrice = analysis.SpotPrice;
+
+                        // Always populate live DbActualAllottedQty from DB for Type 2/3
+                        if (analysisType >= 2)
+                        {
+                            var allottedSummary = await _analysisRepository.GetActualAllottedQtySummaryAsync(ipoId, companyId);
+                            response.DbActualAllottedQty_Total = allottedSummary.Total;
+                            response.DbActualAllottedQty_Retail = allottedSummary.Retail;
+                            response.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
+                            response.DbActualAllottedQty_BHNI = allottedSummary.BHNI;
+                        }
                     }
                     return ReturnData<IPOAnalysisResponse>.SuccessResponse(response!, "Analysis retrieved successfully", 200);
                 }
@@ -200,6 +220,17 @@ namespace IPOClient.Services.Implementations
                                 r.ProfitMargin = a.ProfitMargin ?? 0;
                                 r.SpotPremium = a.SpotPremium ?? 0;
                                 r.SpotPrice = a.SpotPrice;
+
+                                // Always populate live DbActualAllottedQty from DB for Type 2/3
+                                if (a.AnalysisType >= 2)
+                                {
+                                    var allottedSummary = await _analysisRepository.GetActualAllottedQtySummaryAsync(ipoId, companyId);
+                                    r.DbActualAllottedQty_Total = allottedSummary.Total;
+                                    r.DbActualAllottedQty_Retail = allottedSummary.Retail;
+                                    r.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
+                                    r.DbActualAllottedQty_BHNI = allottedSummary.BHNI;
+                                }
+
                                 responses.Add(r);
                             }
                         }
