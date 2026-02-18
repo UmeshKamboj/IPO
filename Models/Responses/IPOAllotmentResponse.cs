@@ -4,6 +4,7 @@ namespace IPOClient.Models.Responses
     {
         public string CompanyName { get; set; } = string.Empty;
         public string CompanyCode { get; set; } = string.Empty;
+        public string Registrar { get; set; } = string.Empty;
     }
 
     public class IPOAllotmentResult

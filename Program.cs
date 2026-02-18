@@ -1,4 +1,4 @@
-﻿using IPOClient.Data;
+using IPOClient.Data;
 using IPOClient.Middleware;
 using IPOClient.Repositories.Implementations;
 using IPOClient.Repositories.Interfaces;
@@ -106,6 +106,11 @@ builder.Services.AddScoped<IIPOBackupService, IPOBackupService>();
 builder.Services.AddScoped<IIPOAccountingService, IPOAccountingService>();
 builder.Services.AddScoped<IIPOAnalysisRepository, IPOAnalysisRepository>();
 builder.Services.AddScoped<IIPOAnalysisService, IPOAnalysisService>();
+builder.Services.AddScoped<ITelegramConfigRepository, TelegramConfigRepository>();
+builder.Services.AddScoped<IEmailConfigRepository, EmailConfigRepository>();
+builder.Services.AddScoped<IProfileService, ProfileService>();
+builder.Services.AddScoped<ITelegramConfigService, TelegramConfigService>();
+builder.Services.AddScoped<IEmailConfigService, EmailConfigService>();
 
 // =======================
 // HttpClient for BSE/Registrar scraping

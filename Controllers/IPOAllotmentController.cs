@@ -1,8 +1,10 @@
+using IPOClient.Data;
 using IPOClient.Models.Requests;
 using IPOClient.Models.Responses;
 using IPOClient.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace IPOClient.Controllers
 {
@@ -12,10 +14,12 @@ namespace IPOClient.Controllers
     public class IPOAllotmentController : ControllerBase
     {
         private readonly IIPOAllotmentService _allotmentService;
+        private readonly IPOClientDbContext _dbContext;
 
-        public IPOAllotmentController(IIPOAllotmentService allotmentService)
+        public IPOAllotmentController(IIPOAllotmentService allotmentService, IPOClientDbContext dbContext)
         {
             _allotmentService = allotmentService;
+            _dbContext = dbContext;
         }
 
         /// <summary>
@@ -64,6 +68,26 @@ namespace IPOClient.Controllers
         }
 
         /// <summary>
+        /// Get all IPOs from all registrars (scraped in parallel, unified list tagged with registrar)
+        /// </summary>
+        [HttpGet("ipos-all")]
+        public async Task<IActionResult> GetAllIPOs()
+        {
+            var result = await _allotmentService.GetAllIPOsAsync();
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+
+        /// <summary>
+        /// Get current/upcoming IPOs from NSE India
+        /// </summary>
+        [HttpGet("ipos-nse")]
+        public async Task<IActionResult> GetIPOsFromNSE()
+        {
+            var result = await _allotmentService.GetIPOsFromNSEAsync();
+            return StatusCode(result.ResponseCode ?? 500, result);
+        }
+
+        /// <summary>
         /// Get list of supported registrars
         /// </summary>
         [HttpGet("registrars")]
@@ -82,6 +106,40 @@ namespace IPOClient.Controllers
             };
 
             return Ok(ReturnData<object>.SuccessResponse(registrars));
+        }
+
+        /// <summary>
+        /// Get cache status for all registrars (admin diagnostic endpoint)
+        /// </summary>
+        [HttpGet("cache-status")]
+        public async Task<IActionResult> GetCacheStatus()
+        {
+            var cacheEntries = await _dbContext.IPO_RegistrarCache
+                .Where(c => c.IsActive)
+                .Select(c => new
+                {
+                    c.RegistrarName,
+                    c.CachedIpoCount,
+                    c.LastFetchedAt,
+                    c.LastFailedAt,
+                    c.LastErrorMessage,
+                    AgeMinutes = (int)EF.Functions.DateDiffMinute(c.LastFetchedAt, DateTime.UtcNow)
+                })
+                .OrderBy(c => c.RegistrarName)
+                .ToListAsync();
+
+            return Ok(ReturnData<object>.SuccessResponse(cacheEntries,
+                $"Cache status for {cacheEntries.Count} registrars"));
+        }
+
+        /// <summary>
+        /// Force refresh cache for a specific registrar (triggers live scrape + cache update)
+        /// </summary>
+        [HttpPost("cache-refresh/{registrar}")]
+        public async Task<IActionResult> RefreshCache(string registrar)
+        {
+            var result = await _allotmentService.GetIPOsByRegistrarAsync(registrar);
+            return StatusCode(result.ResponseCode ?? 500, result);
         }
 
         private int GetCompanyId()

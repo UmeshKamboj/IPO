@@ -12,13 +12,20 @@ namespace IPOClient.Services.Implementations
     public class IPOAnalysisService : IIPOAnalysisService
     {
         private readonly IIPOAnalysisRepository _analysisRepository;
+        private readonly IIPORepository _ipoRepository;
+        private readonly IIPOBuyerPlaceOrderRepository _buyerPlaceOrderRepository;
 
         // Use enum-based keys for investor types
         private static readonly IPOInvestorType[] InvestorTypes = { IPOInvestorType.Retail, IPOInvestorType.SHNI, IPOInvestorType.BHNI };
 
-        public IPOAnalysisService(IIPOAnalysisRepository analysisRepository)
+        public IPOAnalysisService(
+            IIPOAnalysisRepository analysisRepository,
+            IIPORepository ipoRepository,
+            IIPOBuyerPlaceOrderRepository buyerPlaceOrderRepository)
         {
             _analysisRepository = analysisRepository;
+            _ipoRepository = ipoRepository;
+            _buyerPlaceOrderRepository = buyerPlaceOrderRepository;
         }
 
         public async Task<ReturnData<IPOAnalysisResponse>> CalculateAnalysisAsync(IPOAnalysisRequest request, int companyId)
@@ -39,6 +46,16 @@ namespace IPOClient.Services.Implementations
                 else
                     shareQtyData = await _analysisRepository.GetAllotedShareQtyDataAsync(request.IPOId, companyId);
 
+                // Resolve shared fields: ProfitMargin, SpotPremium, SpotPrice are common across all tabs
+                // Priority: request value → latest saved value from any tab → IPO defaults
+                var sharedFields = await _analysisRepository.GetLatestSharedFieldsAsync(request.IPOId, companyId);
+
+                var spotPrice = request.SpotPrice ?? sharedFields.SpotPrice ?? ipoMaster.OpenIPOPrice;
+                var profitMargin = request.ProfitMargin ?? sharedFields.ProfitMargin ?? 0;
+                var spotPremium = request.SpotPremium ?? sharedFields.SpotPremium ?? (spotPrice.HasValue
+                    ? spotPrice.Value - ipoMaster.IPO_Upper_Price_Band
+                    : 0);
+
                 var response = new IPOAnalysisResponse
                 {
                     AnalysisType = request.AnalysisType,
@@ -51,9 +68,9 @@ namespace IPOClient.Services.Implementations
                     ActualAllottedQty_Retail = request.ActualAllottedQty_Retail ?? 0,
                     ActualAllottedQty_SHNI = request.ActualAllottedQty_SHNI ?? 0,
                     ActualAllottedQty_BHNI = request.ActualAllottedQty_BHNI ?? 0,
-                    ProfitMargin = request.ProfitMargin ?? 0,
-                    SpotPremium = request.SpotPremium ?? 0,
-                    SpotPrice = request.SpotPrice
+                    ProfitMargin = profitMargin,
+                    SpotPremium = spotPremium,
+                    SpotPrice = spotPrice
                 };
 
                 // Populate read-only actual allotted qty from DB for Tab 2/3
@@ -64,6 +81,28 @@ namespace IPOClient.Services.Implementations
                     response.DbActualAllottedQty_Retail = allottedSummary.Retail;
                     response.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
                     response.DbActualAllottedQty_BHNI = allottedSummary.BHNI;
+
+                    // If user hasn't provided ActualAllottedQty, use DB values as fallback
+                    if ((request.ActualAllottedQty_Total ?? 0) == 0)
+                    {
+                        request.ActualAllottedQty_Total = allottedSummary.Total;
+                        response.ActualAllottedQty_Total = allottedSummary.Total;
+                    }
+                    if ((request.ActualAllottedQty_Retail ?? 0) == 0)
+                    {
+                        request.ActualAllottedQty_Retail = allottedSummary.Retail;
+                        response.ActualAllottedQty_Retail = allottedSummary.Retail;
+                    }
+                    if ((request.ActualAllottedQty_SHNI ?? 0) == 0)
+                    {
+                        request.ActualAllottedQty_SHNI = allottedSummary.SHNI;
+                        response.ActualAllottedQty_SHNI = allottedSummary.SHNI;
+                    }
+                    if ((request.ActualAllottedQty_BHNI ?? 0) == 0)
+                    {
+                        request.ActualAllottedQty_BHNI = allottedSummary.BHNI;
+                        response.ActualAllottedQty_BHNI = allottedSummary.BHNI;
+                    }
                 }
 
                 // Copy count tables from order summary
@@ -80,14 +119,21 @@ namespace IPOClient.Services.Implementations
                 // Build rates
                 BuildRates(response, orderSummary, request);
 
-                // Calculate Difference Qty (To Hedge)
-                response.DifferenceQtyToHedge = CalculateDifferenceQty(response);
+                // Calculate Difference Qty
+                var diffQty = CalculateDifferenceQty(response);
+                response.DifferenceQtyToHedge = diffQty;
 
-                // Tab 3: Profit or Loss
-                if (request.AnalysisType == 3 && request.SpotPrice.HasValue)
+                // Tab 3: Difference Qty + Profit or Loss
+                if (request.AnalysisType == 3)
                 {
-                    response.ProfitOrLoss = CalculateProfitOrLoss(response, request.SpotPrice.Value, ipoMaster.IPO_Upper_Price_Band);
-                    // Rates show null for After Listing
+                    response.DifferenceQty = diffQty;
+
+                    if (spotPrice.HasValue)
+                    {
+                        response.ProfitOrLoss = CalculateProfitOrLoss(response, spotPrice.Value, ipoMaster.IPO_Upper_Price_Band);
+                    }
+
+                    // Rates not applicable for After Listing
                     response.KostakRates = new Dictionary<string, RateBlock>();
                     response.SubjectToRates = new Dictionary<string, RateBlock>();
                 }
@@ -110,6 +156,7 @@ namespace IPOClient.Services.Implementations
 
                 var resultJson = JsonSerializer.Serialize(calcResult.Data);
 
+                // Save with original request values — null fields won't overwrite existing DB values
                 var analysis = new IPO_Analysis
                 {
                     IPOId = request.IPOId,
@@ -132,6 +179,17 @@ namespace IPOClient.Services.Implementations
 
                 await _analysisRepository.UpsertAnalysisAsync(analysis);
 
+                // Sync only explicitly sent shared fields (null = not sent, won't overwrite)
+                await _analysisRepository.UpdateSharedFieldsAsync(
+                    request.IPOId, companyId, request.ProfitMargin, request.SpotPremium, request.SpotPrice);
+
+                // When SpotPrice is explicitly sent, update IPO Master and all child order PreOpenPrices
+                if (request.SpotPrice.HasValue && request.SpotPrice.Value > 0)
+                {
+                    await _ipoRepository.UpdatePreOpenPriceAsync(request.IPOId, request.SpotPrice.Value, companyId, userId);
+                    await _buyerPlaceOrderRepository.UpdateAllChildrenPreOpenPriceAsync(request.IPOId, request.SpotPrice.Value, companyId, userId);
+                }
+
                 return ReturnData<IPOAnalysisResponse>.SuccessResponse(calcResult.Data, "Analysis submitted successfully", 200);
             }
             catch (Exception ex)
@@ -146,42 +204,21 @@ namespace IPOClient.Services.Implementations
             {
                 var analysis = await _analysisRepository.GetAnalysisAsync(ipoId, analysisType, companyId);
 
-                // If saved analysis exists, return it with stored input values
-                if (analysis != null && !string.IsNullOrEmpty(analysis.CalculatedResultJson))
-                {
-                    var response = JsonSerializer.Deserialize<IPOAnalysisResponse>(analysis.CalculatedResultJson);
-                    if (response != null)
-                    {
-                        // Populate input fields from the stored entity (in case JSON doesn't have them)
-                        response.ExpectedApplications_Retail = analysis.ExpectedApplications_Retail ?? 0;
-                        response.ExpectedApplications_SHNI = analysis.ExpectedApplications_SHNI ?? 0;
-                        response.ExpectedApplications_BHNI = analysis.ExpectedApplications_BHNI ?? 0;
-                        response.ActualAllottedQty_Total = analysis.ActualAllottedQty_Total ?? 0;
-                        response.ActualAllottedQty_Retail = analysis.ActualAllottedQty_Retail ?? 0;
-                        response.ActualAllottedQty_SHNI = analysis.ActualAllottedQty_SHNI ?? 0;
-                        response.ActualAllottedQty_BHNI = analysis.ActualAllottedQty_BHNI ?? 0;
-                        response.ProfitMargin = analysis.ProfitMargin ?? 0;
-                        response.SpotPremium = analysis.SpotPremium ?? 0;
-                        response.SpotPrice = analysis.SpotPrice;
-
-                        // Always populate live DbActualAllottedQty from DB for Type 2/3
-                        if (analysisType >= 2)
-                        {
-                            var allottedSummary = await _analysisRepository.GetActualAllottedQtySummaryAsync(ipoId, companyId);
-                            response.DbActualAllottedQty_Total = allottedSummary.Total;
-                            response.DbActualAllottedQty_Retail = allottedSummary.Retail;
-                            response.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
-                            response.DbActualAllottedQty_BHNI = allottedSummary.BHNI;
-                        }
-                    }
-                    return ReturnData<IPOAnalysisResponse>.SuccessResponse(response!, "Analysis retrieved successfully", 200);
-                }
-
-                // No saved analysis — calculate fresh result with default inputs
+                // Re-calculate from saved inputs (or defaults) to ensure all computed fields are live
                 var request = new IPOAnalysisRequest
                 {
                     IPOId = ipoId,
-                    AnalysisType = analysisType
+                    AnalysisType = analysisType,
+                    ExpectedApplications_Retail = analysis?.ExpectedApplications_Retail,
+                    ExpectedApplications_SHNI = analysis?.ExpectedApplications_SHNI,
+                    ExpectedApplications_BHNI = analysis?.ExpectedApplications_BHNI,
+                    ActualAllottedQty_Total = analysis?.ActualAllottedQty_Total,
+                    ActualAllottedQty_Retail = analysis?.ActualAllottedQty_Retail,
+                    ActualAllottedQty_SHNI = analysis?.ActualAllottedQty_SHNI,
+                    ActualAllottedQty_BHNI = analysis?.ActualAllottedQty_BHNI,
+                    ProfitMargin = analysis?.ProfitMargin,
+                    SpotPremium = analysis?.SpotPremium,
+                    SpotPrice = analysis?.SpotPrice
                 };
 
                 return await CalculateAnalysisAsync(request, companyId);
@@ -199,41 +236,30 @@ namespace IPOClient.Services.Implementations
                 var analyses = await _analysisRepository.GetAllAnalysesAsync(ipoId, companyId);
                 var responses = new List<IPOAnalysisResponse>();
 
-                // If saved analyses exist, return them with stored input values
                 if (analyses.Any())
                 {
+                    // Re-calculate each saved analysis from stored inputs for live computed fields
                     foreach (var a in analyses)
                     {
-                        if (!string.IsNullOrEmpty(a.CalculatedResultJson))
+                        var request = new IPOAnalysisRequest
                         {
-                            var r = JsonSerializer.Deserialize<IPOAnalysisResponse>(a.CalculatedResultJson);
-                            if (r != null)
-                            {
-                                // Populate input fields from the stored entity (in case JSON doesn't have them)
-                                r.ExpectedApplications_Retail = a.ExpectedApplications_Retail ?? 0;
-                                r.ExpectedApplications_SHNI = a.ExpectedApplications_SHNI ?? 0;
-                                r.ExpectedApplications_BHNI = a.ExpectedApplications_BHNI ?? 0;
-                                r.ActualAllottedQty_Total = a.ActualAllottedQty_Total ?? 0;
-                                r.ActualAllottedQty_Retail = a.ActualAllottedQty_Retail ?? 0;
-                                r.ActualAllottedQty_SHNI = a.ActualAllottedQty_SHNI ?? 0;
-                                r.ActualAllottedQty_BHNI = a.ActualAllottedQty_BHNI ?? 0;
-                                r.ProfitMargin = a.ProfitMargin ?? 0;
-                                r.SpotPremium = a.SpotPremium ?? 0;
-                                r.SpotPrice = a.SpotPrice;
+                            IPOId = ipoId,
+                            AnalysisType = a.AnalysisType,
+                            ExpectedApplications_Retail = a.ExpectedApplications_Retail,
+                            ExpectedApplications_SHNI = a.ExpectedApplications_SHNI,
+                            ExpectedApplications_BHNI = a.ExpectedApplications_BHNI,
+                            ActualAllottedQty_Total = a.ActualAllottedQty_Total,
+                            ActualAllottedQty_Retail = a.ActualAllottedQty_Retail,
+                            ActualAllottedQty_SHNI = a.ActualAllottedQty_SHNI,
+                            ActualAllottedQty_BHNI = a.ActualAllottedQty_BHNI,
+                            ProfitMargin = a.ProfitMargin,
+                            SpotPremium = a.SpotPremium,
+                            SpotPrice = a.SpotPrice
+                        };
 
-                                // Always populate live DbActualAllottedQty from DB for Type 2/3
-                                if (a.AnalysisType >= 2)
-                                {
-                                    var allottedSummary = await _analysisRepository.GetActualAllottedQtySummaryAsync(ipoId, companyId);
-                                    r.DbActualAllottedQty_Total = allottedSummary.Total;
-                                    r.DbActualAllottedQty_Retail = allottedSummary.Retail;
-                                    r.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
-                                    r.DbActualAllottedQty_BHNI = allottedSummary.BHNI;
-                                }
-
-                                responses.Add(r);
-                            }
-                        }
+                        var calcResult = await CalculateAnalysisAsync(request, companyId);
+                        if (calcResult.Success && calcResult.Data != null)
+                            responses.Add(calcResult.Data);
                     }
                 }
                 else
@@ -244,24 +270,12 @@ namespace IPOClient.Services.Implementations
                         var request = new IPOAnalysisRequest
                         {
                             IPOId = ipoId,
-                            AnalysisType = analysisType,
-                            ExpectedApplications_Retail = 0,
-                            ExpectedApplications_SHNI = 0,
-                            ExpectedApplications_BHNI = 0,
-                            ActualAllottedQty_Total = 0,
-                            ActualAllottedQty_Retail = 0,
-                            ActualAllottedQty_SHNI = 0,
-                            ActualAllottedQty_BHNI = 0,
-                            ProfitMargin = 0,
-                            SpotPremium = 0,
-                            SpotPrice = 0
+                            AnalysisType = analysisType
                         };
 
                         var calcResult = await CalculateAnalysisAsync(request, companyId);
                         if (calcResult.Success && calcResult.Data != null)
-                        {
                             responses.Add(calcResult.Data);
-                        }
                     }
                 }
 
@@ -416,7 +430,8 @@ namespace IPOClient.Services.Implementations
             if (request.AnalysisType == 3)
                 return; // No rates for After Listing
 
-            var profitMargin = request.ProfitMargin ?? 0;
+            // Use resolved profitMargin from response (shared across all tabs)
+            var profitMargin = response.ProfitMargin;
 
             foreach (var t in InvestorTypes)
             {
@@ -455,7 +470,8 @@ namespace IPOClient.Services.Implementations
 
         private decimal CalculateProfitOrLoss(IPOAnalysisResponse response, decimal spotPrice, decimal ipoPrice)
         {
-            var sharePnL = response.DifferenceQtyToHedge * (spotPrice - ipoPrice);
+            // Tab 3 uses DifferenceQty (without profit margin context)
+            var sharePnL = (response.DifferenceQty ?? response.DifferenceQtyToHedge) * (spotPrice - ipoPrice);
 
             decimal netKostakAmount = 0;
             foreach (var kvp in response.KostakCount)

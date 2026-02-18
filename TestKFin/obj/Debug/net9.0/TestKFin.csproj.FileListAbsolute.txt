@@ -1,0 +1,15 @@
+E:\pLOGIC\Projects\IPO\TestKFin\bin\Debug\net9.0\TestKFin.exe
+E:\pLOGIC\Projects\IPO\TestKFin\bin\Debug\net9.0\TestKFin.deps.json
+E:\pLOGIC\Projects\IPO\TestKFin\bin\Debug\net9.0\TestKFin.runtimeconfig.json
+E:\pLOGIC\Projects\IPO\TestKFin\bin\Debug\net9.0\TestKFin.dll
+E:\pLOGIC\Projects\IPO\TestKFin\bin\Debug\net9.0\TestKFin.pdb
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.GeneratedMSBuildEditorConfig.editorconfig
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.AssemblyInfoInputs.cache
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.AssemblyInfo.cs
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.csproj.CoreCompileInputs.cache
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.sourcelink.json
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.dll
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\refint\TestKFin.dll
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.pdb
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\TestKFin.genruntimeconfig.cache
+E:\pLOGIC\Projects\IPO\TestKFin\obj\Debug\net9.0\ref\TestKFin.dll

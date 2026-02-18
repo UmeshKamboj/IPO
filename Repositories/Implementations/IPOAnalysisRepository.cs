@@ -264,16 +264,27 @@ namespace IPOClient.Repositories.Implementations
 
             if (existing != null)
             {
-                existing.ExpectedApplications_Retail = analysis.ExpectedApplications_Retail;
-                existing.ExpectedApplications_SHNI = analysis.ExpectedApplications_SHNI;
-                existing.ExpectedApplications_BHNI = analysis.ExpectedApplications_BHNI;
-                existing.ActualAllottedQty_Total = analysis.ActualAllottedQty_Total;
-                existing.ActualAllottedQty_Retail = analysis.ActualAllottedQty_Retail;
-                existing.ActualAllottedQty_SHNI = analysis.ActualAllottedQty_SHNI;
-                existing.ActualAllottedQty_BHNI = analysis.ActualAllottedQty_BHNI;
-                existing.ProfitMargin = analysis.ProfitMargin;
-                existing.SpotPremium = analysis.SpotPremium;
-                existing.SpotPrice = analysis.SpotPrice;
+                // Only update fields that are not null — preserve existing DB values for fields not sent
+                if (analysis.ExpectedApplications_Retail.HasValue)
+                    existing.ExpectedApplications_Retail = analysis.ExpectedApplications_Retail;
+                if (analysis.ExpectedApplications_SHNI.HasValue)
+                    existing.ExpectedApplications_SHNI = analysis.ExpectedApplications_SHNI;
+                if (analysis.ExpectedApplications_BHNI.HasValue)
+                    existing.ExpectedApplications_BHNI = analysis.ExpectedApplications_BHNI;
+                if (analysis.ActualAllottedQty_Total.HasValue)
+                    existing.ActualAllottedQty_Total = analysis.ActualAllottedQty_Total;
+                if (analysis.ActualAllottedQty_Retail.HasValue)
+                    existing.ActualAllottedQty_Retail = analysis.ActualAllottedQty_Retail;
+                if (analysis.ActualAllottedQty_SHNI.HasValue)
+                    existing.ActualAllottedQty_SHNI = analysis.ActualAllottedQty_SHNI;
+                if (analysis.ActualAllottedQty_BHNI.HasValue)
+                    existing.ActualAllottedQty_BHNI = analysis.ActualAllottedQty_BHNI;
+                if (analysis.ProfitMargin.HasValue)
+                    existing.ProfitMargin = analysis.ProfitMargin;
+                if (analysis.SpotPremium.HasValue)
+                    existing.SpotPremium = analysis.SpotPremium;
+                if (analysis.SpotPrice.HasValue)
+                    existing.SpotPrice = analysis.SpotPrice;
                 existing.CalculatedResultJson = analysis.CalculatedResultJson;
                 existing.ModifiedBy = analysis.ModifiedBy ?? analysis.CreatedBy;
                 existing.ModifiedDate = DateTime.UtcNow;
@@ -287,6 +298,44 @@ namespace IPOClient.Repositories.Implementations
                 await _context.SaveChangesAsync();
                 return analysis.Id;
             }
+        }
+
+        public async Task<SharedAnalysisFields> GetLatestSharedFieldsAsync(int ipoId, int companyId)
+        {
+            // Get the most recently saved analysis for this IPO to read shared fields
+            var latest = await _context.Set<IPO_Analysis>()
+                .Where(a => a.IPOId == ipoId && a.CompanyId == companyId && a.IsActive)
+                .OrderByDescending(a => a.ModifiedDate ?? a.CreatedDate)
+                .FirstOrDefaultAsync();
+
+            return new SharedAnalysisFields
+            {
+                ProfitMargin = latest?.ProfitMargin,
+                SpotPremium = latest?.SpotPremium,
+                SpotPrice = latest?.SpotPrice
+            };
+        }
+
+        public async Task UpdateSharedFieldsAsync(int ipoId, int companyId, decimal? profitMargin, decimal? spotPremium, decimal? spotPrice)
+        {
+            // Update shared fields across ALL analysis tabs for this IPO
+            var allAnalyses = await _context.Set<IPO_Analysis>()
+                .Where(a => a.IPOId == ipoId && a.CompanyId == companyId && a.IsActive)
+                .ToListAsync();
+
+            foreach (var a in allAnalyses)
+            {
+                // Only update shared fields that were explicitly provided (not null)
+                if (profitMargin.HasValue)
+                    a.ProfitMargin = profitMargin;
+                if (spotPremium.HasValue)
+                    a.SpotPremium = spotPremium;
+                if (spotPrice.HasValue)
+                    a.SpotPrice = spotPrice;
+                a.ModifiedDate = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
         }
     }
 }

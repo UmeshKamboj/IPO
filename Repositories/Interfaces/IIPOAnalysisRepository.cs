@@ -14,6 +14,18 @@ namespace IPOClient.Repositories.Interfaces
         Task<List<IPO_Analysis>> GetAllAnalysesAsync(int ipoId, int companyId);
         Task<int> UpsertAnalysisAsync(IPO_Analysis analysis);
         Task<ActualAllottedQtySummary> GetActualAllottedQtySummaryAsync(int ipoId, int companyId);
+        Task<SharedAnalysisFields> GetLatestSharedFieldsAsync(int ipoId, int companyId);
+        Task UpdateSharedFieldsAsync(int ipoId, int companyId, decimal? profitMargin, decimal? spotPremium, decimal? spotPrice);
+    }
+
+    /// <summary>
+    /// Shared fields (ProfitMargin, SpotPremium, SpotPrice) common across all analysis tabs
+    /// </summary>
+    public class SharedAnalysisFields
+    {
+        public decimal? ProfitMargin { get; set; }
+        public decimal? SpotPremium { get; set; }
+        public decimal? SpotPrice { get; set; }
     }
 
     public class ActualAllottedQtySummary

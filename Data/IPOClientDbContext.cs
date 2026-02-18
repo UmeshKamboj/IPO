@@ -28,6 +28,9 @@ namespace IPOClient.Data
         public DbSet<OrderChild_DeletedHistory> OrderChild_DeletedHistory { get; set; }
         public DbSet<IPO_PaymentTransaction> PaymentTransactions { get; set; }
         public DbSet<IPO_Analysis> IPO_Analysis { get; set; }
+        public DbSet<IPO_TelegramConfig> IPO_TelegramConfig { get; set; }
+        public DbSet<IPO_EmailConfig> IPO_EmailConfig { get; set; }
+        public DbSet<IPO_RegistrarCache> IPO_RegistrarCache { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -179,6 +182,57 @@ namespace IPOClient.Data
                       .OnDelete(DeleteBehavior.Restrict);
 
                 entity.HasIndex(e => new { e.IPOId, e.AnalysisType, e.CompanyId });
+            });
+
+            // Configure IPO_TelegramConfig table
+            modelBuilder.Entity<IPO_TelegramConfig>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.ToTable("IPO_TelegramConfig");
+
+                entity.Property(e => e.TelegramAPIKey).HasMaxLength(500);
+                entity.Property(e => e.MobileNumber).HasMaxLength(20);
+                entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(e => e.User)
+                      .WithMany()
+                      .HasForeignKey(e => e.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => e.UserId).IsUnique();
+            });
+
+            // Configure IPO_EmailConfig table
+            modelBuilder.Entity<IPO_EmailConfig>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.ToTable("IPO_EmailConfig");
+
+                entity.Property(e => e.Email).HasMaxLength(256);
+                entity.Property(e => e.AppPassword).HasMaxLength(500);
+                entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasOne(e => e.User)
+                      .WithMany()
+                      .HasForeignKey(e => e.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => e.UserId).IsUnique();
+            });
+
+            // Configure IPO_RegistrarCache table
+            modelBuilder.Entity<IPO_RegistrarCache>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.ToTable("IPO_RegistrarCache");
+
+                entity.Property(e => e.RegistrarName).HasMaxLength(50).IsRequired();
+                entity.Property(e => e.LastErrorMessage).HasMaxLength(1000);
+                entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(e => e.IsActive).HasDefaultValue(true);
+
+                // One row per registrar - enforce uniqueness
+                entity.HasIndex(e => e.RegistrarName).IsUnique();
             });
         }
     }

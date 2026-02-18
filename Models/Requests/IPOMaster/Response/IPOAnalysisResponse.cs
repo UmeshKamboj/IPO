@@ -40,10 +40,11 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public Dictionary<string, CategoryStatusBlock> SubjectToShareQty { get; set; } = new();
         public PremiumStatusBlock PremiumShareQty { get; set; } = new();
 
-        // Difference Qty (To Hedge)
+        // Difference Qty (To Hedge) - Tab 1 & 2
         public decimal DifferenceQtyToHedge { get; set; }
 
         // Tab 3 only
+        public decimal? DifferenceQty { get; set; }
         public decimal? ProfitOrLoss { get; set; }
     }
 

@@ -24,5 +24,15 @@ namespace IPOClient.Services.Interfaces
         /// Firm allotment: mark all order children for an IPO as allotted with their existing quantity
         /// </summary>
         Task<ReturnData<BulkAllotmentCheckResponse>> FirmAllotmentAsync(FirmAllotmentRequest request, int companyId);
+
+        /// <summary>
+        /// Get all IPOs from all registrars in parallel (unified list with registrar tag)
+        /// </summary>
+        Task<ReturnData<List<IPOAllotmentCompany>>> GetAllIPOsAsync();
+
+        /// <summary>
+        /// Get current/upcoming IPOs from NSE
+        /// </summary>
+        Task<ReturnData<List<IPOAllotmentCompany>>> GetIPOsFromNSEAsync();
     }
 }
