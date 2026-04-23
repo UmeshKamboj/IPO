@@ -36,25 +36,19 @@ namespace IPOClient.Services.Implementations
                 if (ipoMaster == null)
                     return ReturnData<IPOAnalysisResponse>.ErrorResponse("IPO not found", 404);
 
-                // Run all independent queries in parallel — significant speedup vs sequential awaits
-                var orderSummaryTask = _analysisRepository.GetOrderStatusSummaryAsync(request.IPOId, companyId, ipoMaster,
+                // Sequential awaits — EF Core DbContext is not thread-safe, cannot parallelise
+                var orderSummary = await _analysisRepository.GetOrderStatusSummaryAsync(request.IPOId, companyId, ipoMaster,
                     request.AnalysisType == 3 ? request.SpotPrice : null);
 
-                var shareQtyTask = request.AnalysisType == 1
-                    ? _analysisRepository.GetShareQtyDataAsync(request.IPOId, companyId)
-                    : _analysisRepository.GetAllotedShareQtyDataAsync(request.IPOId, companyId);
+                var shareQtyData = request.AnalysisType == 1
+                    ? await _analysisRepository.GetShareQtyDataAsync(request.IPOId, companyId)
+                    : await _analysisRepository.GetAllotedShareQtyDataAsync(request.IPOId, companyId);
 
-                var sharedFieldsTask = _analysisRepository.GetLatestSharedFieldsAsync(request.IPOId, companyId);
+                var sharedFields = await _analysisRepository.GetLatestSharedFieldsAsync(request.IPOId, companyId);
 
                 var allottedSummaryTask = request.AnalysisType >= 2
                     ? _analysisRepository.GetActualAllottedQtySummaryAsync(request.IPOId, companyId)
                     : Task.FromResult(new ActualAllottedQtySummary());
-
-                await Task.WhenAll(orderSummaryTask, shareQtyTask, sharedFieldsTask, allottedSummaryTask);
-
-                var orderSummary = orderSummaryTask.Result;
-                var shareQtyData = shareQtyTask.Result;
-                var sharedFields = sharedFieldsTask.Result;
 
                 var spotPrice = request.SpotPrice ?? sharedFields.SpotPrice ?? ipoMaster.OpenIPOPrice;
                 var profitMargin = request.ProfitMargin ?? sharedFields.ProfitMargin ?? 0;
@@ -79,10 +73,10 @@ namespace IPOClient.Services.Implementations
                     SpotPrice = spotPrice
                 };
 
-                // Populate read-only actual allotted qty from DB for Tab 2/3 (already fetched in parallel above)
+                // Populate read-only actual allotted qty from DB for Tab 2/3
                 if (request.AnalysisType >= 2)
                 {
-                    var allottedSummary = allottedSummaryTask.Result;
+                    var allottedSummary = await allottedSummaryTask;
                     response.DbActualAllottedQty_Total = allottedSummary.Total;
                     response.DbActualAllottedQty_Retail = allottedSummary.Retail;
                     response.DbActualAllottedQty_SHNI = allottedSummary.SHNI;
