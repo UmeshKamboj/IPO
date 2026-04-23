@@ -25,6 +25,9 @@ builder.Services.AddControllers()
 
         // Use camelCase for property names
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+
+        // Allow numeric fields sent as strings from frontend (e.g. ipoId: "26")
+        options.JsonSerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString;
     });
 
 // =======================

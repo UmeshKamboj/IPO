@@ -33,12 +33,23 @@ namespace IPOClient.Controllers
         /// Calculate and save analysis to database
         /// </summary>
         [HttpPost("submit")]
-        public async Task<IActionResult> Submit([FromBody] IPOAnalysisRequest request)
+        public async Task<IActionResult> Submit([FromBody] IPOAnalysisRequest request, CancellationToken cancellationToken)
         {
             var userId = GetCurrentUserId();
             var companyId = GetCompanyId();
-            var result = await _analysisService.SubmitAnalysisAsync(request, userId, companyId);
-            return StatusCode(result.ResponseCode ?? 500, result);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+            try
+            {
+                var result = await _analysisService.SubmitAnalysisAsync(request, userId, companyId);
+                return StatusCode(result.ResponseCode ?? 500, result);
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(504, new { success = false, responseMessage = "Request timed out. The analysis is taking too long. Please try again." });
+            }
         }
 
         /// <summary>

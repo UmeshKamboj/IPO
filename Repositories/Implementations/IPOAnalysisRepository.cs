@@ -22,12 +22,11 @@ namespace IPOClient.Repositories.Implementations
                 .FirstOrDefaultAsync(x => x.Id == ipoId && x.CompanyId == companyId && x.IsActive);
         }
 
-        public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(int ipoId, int companyId, decimal? overridePreOpenPrice = null)
+        public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(int ipoId, int companyId, IPO_IPOMaster ipoMaster, decimal? overridePreOpenPrice = null)
         {
             var response = new OrderStatusSummaryResponse();
 
-            // Get IPO Master data for pricing
-            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
+            // Use the already-fetched IPO Master — no extra DB round trip
             var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
             var ipoPreOpenPrice = overridePreOpenPrice ?? ipoMaster?.OpenIPOPrice ?? 0;
 

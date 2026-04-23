@@ -1917,52 +1917,46 @@ namespace IPOClient.Repositories.Implementations
 
         public async Task<int> UpdateAllChildrenPreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId)
         {
-            var children = await _context.ChildPlaceOrder
-                .Include(c => c.IPOOrder)
-                    .ThenInclude(o => o.BuyerMaster)
+            var now = DateTime.UtcNow;
+            var userIdStr = userId.ToString();
+
+            // Bulk UPDATE children — no load into memory needed
+            var updatedChildren = await _context.ChildPlaceOrder
                 .Where(c => c.IPOOrder.BuyerMaster.IPOId == ipoId &&
-                           c.IPOOrder.BuyerMaster.CompanyId == companyId &&
-                           c.IPOOrder.BuyerMaster.IsActive &&
-                           !c.IsDeleted &&
-                           !c.IPOOrder.IsDeleted &&
-                           !c.IPOOrder.BuyerMaster.IsDeleted)
-                .ToListAsync();
+                            c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                            c.IPOOrder.BuyerMaster.IsActive &&
+                            !c.IsDeleted &&
+                            !c.IPOOrder.IsDeleted &&
+                            !c.IPOOrder.BuyerMaster.IsDeleted)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.PreOpenPrice, preOpenPrice)
+                    .SetProperty(c => c.ModifiedBy, userIdStr)
+                    .SetProperty(c => c.ModifiedDate, now));
 
-            foreach (var child in children)
+            // Bulk UPDATE orders: only Premium/CALL/PUT where EffectiveRate is not yet set
+            if (preOpenPrice > 0)
             {
-                child.PreOpenPrice = preOpenPrice;
-                child.ModifiedBy = userId.ToString();
-                child.ModifiedDate = DateTime.UtcNow;
-            }
-
-            // Recalculate EffectiveRate on all parent orders for this IPO
-            var orders = await _context.BuyerOrders
-                .Include(o => o.BuyerMaster)
-                .Where(o => o.BuyerMaster.IPOId == ipoId &&
-                           o.BuyerMaster.CompanyId == companyId &&
-                           o.BuyerMaster.IsActive &&
-                           !o.IsDeleted &&
-                           !o.BuyerMaster.IsDeleted)
-                .ToListAsync();
-
-            foreach (var order in orders)
-            {
-                // Only recalculate if EffectiveRate not already set (new orders store it at creation)
-                if (order.EffectiveRate == null)
+                var premiumCategories = new[]
                 {
-                    bool isPremOrOpt = order.OrderCategory == (int)IPOOrderCategory.Premium ||
-                                       order.OrderCategory == (int)IPOOrderCategory.CALL ||
-                                       order.OrderCategory == (int)IPOOrderCategory.PUT;
-                    if (isPremOrOpt && preOpenPrice > 0)
-                    {
-                        order.EffectiveRate = order.Rate;  // Rate IS the entered value
-                        order.ModifiedDate = DateTime.UtcNow;
-                    }
-                }
+                    (int)IPOOrderCategory.Premium,
+                    (int)IPOOrderCategory.CALL,
+                    (int)IPOOrderCategory.PUT
+                };
+
+                await _context.BuyerOrders
+                    .Where(o => o.BuyerMaster.IPOId == ipoId &&
+                                o.BuyerMaster.CompanyId == companyId &&
+                                o.BuyerMaster.IsActive &&
+                                !o.IsDeleted &&
+                                !o.BuyerMaster.IsDeleted &&
+                                o.EffectiveRate == null &&
+                                premiumCategories.Contains(o.OrderCategory))
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(o => o.EffectiveRate, o => o.Rate)
+                        .SetProperty(o => o.ModifiedDate, now));
             }
 
-            await _context.SaveChangesAsync();
-            return children.Count;
+            return updatedChildren;
         }
 
         public async Task<int> SyncChildrenPreOpenPriceFromParentAsync(int ipoId, decimal preOpenPrice, int companyId, int userId)
