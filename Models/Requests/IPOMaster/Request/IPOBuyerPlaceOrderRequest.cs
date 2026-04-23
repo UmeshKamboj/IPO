@@ -33,13 +33,14 @@ namespace IPOClient.Models.Requests.IPOMaster.Request
     }
 
     public class UpdateOrderDetailRequest
-    { 
+    {
         public int POChildId { get; set; } //Place Order Sub Child Id
         public string? PANNumber { get; set; } = string.Empty;
         public string? ClientName { get; set; } = string.Empty;
         public string? DematNumber { get; set; } = string.Empty;
         public string? ApplicationNumber { get; set; } = string.Empty;
-        public int? AllotedQty { get; set; } =null;
+        [System.Text.Json.Serialization.JsonConverter(typeof(IPOClient.Converters.NullableIntFromStringConverter))]
+        public int? AllotedQty { get; set; } = null;
     }
 
 }

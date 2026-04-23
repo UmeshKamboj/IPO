@@ -31,7 +31,7 @@ namespace IPOClient.Services.Implementations
             }
             catch (Exception ex)
             {
-                return ReturnData<GroupResponse>.ErrorResponse($"Error creating group: {ex.Message}", 500);
+                return ReturnData<GroupResponse>.ErrorResponse($"Error creating group: {ex.Message} | {ex.InnerException?.Message}", 500);
             }
         }
 

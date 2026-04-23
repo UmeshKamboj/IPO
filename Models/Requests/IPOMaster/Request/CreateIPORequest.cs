@@ -34,15 +34,15 @@ namespace IPOClient.Models.Requests.IPOMaster.Request
 
         [Required]
         [Range(0, 100, ErrorMessage = "Retail Percentage must be between 0 and 100")]
-        public int Retail_Percentage { get; set; }
+        public decimal Retail_Percentage { get; set; }
 
 
         [Range(0, 100, ErrorMessage = "BHNI Percentage must be between 0 and 100")]
-        public int? BHNI_Percentage { get; set; }
+        public decimal? BHNI_Percentage { get; set; }
 
 
         [Range(0, 100, ErrorMessage = "SHNI Percentage must be between 0 and 100")]
-        public int? SHNI_Percentage { get; set; }
+        public decimal? SHNI_Percentage { get; set; }
         public string? Remark { get; set; }
 
         // Audit Fields 

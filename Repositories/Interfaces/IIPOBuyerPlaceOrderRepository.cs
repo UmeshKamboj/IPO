@@ -40,5 +40,6 @@ namespace IPOClient.Repositories.Interfaces
         Task<int> UpdateOrderChildrenPreOpenPriceAsync(int orderId, decimal preOpenPrice, int companyId, int userId);
         Task<int> UpdateAllChildrenPreOpenPriceAsync(int ipoId, decimal preOpenPrice, int companyId, int userId);
         Task<int> SyncChildrenPreOpenPriceFromParentAsync(int ipoId, decimal preOpenPrice, int companyId, int userId);
+        Task<int> FixAllotedQtyFromLotSizeAsync(int ipoId, int companyId);
     }
 }

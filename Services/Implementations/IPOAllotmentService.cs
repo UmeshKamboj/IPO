@@ -196,16 +196,27 @@ namespace IPOClient.Services.Implementations
                         else if (allotResult != null)
                             response.NotAllotted++;
                         else
+                        {
                             response.Failed++;
+                            response.Errors.Add($"PAN {pan}: Registrar returned no data");
+                        }
 
                         // Small delay to avoid rate limiting
                         await Task.Delay(200);
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to check allotment for PAN {PAN}", pan);
+                        panResults[pan] = null;
+                        response.Failed++;
+                        response.Errors.Add($"PAN {pan}: Registrar server error - {ex.Message}");
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to check allotment for PAN {PAN}", pan);
                         panResults[pan] = null;
                         response.Failed++;
+                        response.Errors.Add($"PAN {pan}: {ex.Message}");
                     }
                 }
 
@@ -239,8 +250,23 @@ namespace IPOClient.Services.Implementations
                 _logger.LogInformation("Bulk allotment check completed: {Total} PANs, {Allotted} allotted, {Updated} records updated",
                     response.TotalPANs, response.Allotted, response.Updated);
 
+                // If all PANs failed, return error response so frontend knows it's a failure
+                if (response.Failed > 0 && response.Allotted == 0 && response.NotAllotted == 0)
+                {
+                    return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse(
+                        $"Allotment check failed for all {response.Failed} PANs. The {request.Registrar} registrar server returned an error. Please try again later or check the registrar website directly.",
+                        500, response);
+                }
+
+                // If some failed but some succeeded, return success with warning
+                if (response.Failed > 0)
+                {
+                    return ReturnData<BulkAllotmentCheckResponse>.SuccessResponse(response,
+                        $"Processed {response.Processed} PANs. {response.Allotted} allotted, {response.NotAllotted} not allotted, {response.Failed} failed (registrar server error).");
+                }
+
                 return ReturnData<BulkAllotmentCheckResponse>.SuccessResponse(response,
-                    $"Processed {response.Processed} PANs. {response.Allotted} allotted, {response.NotAllotted} not allotted, {response.Failed} failed.");
+                    $"Processed {response.Processed} PANs. {response.Allotted} allotted, {response.NotAllotted} not allotted.");
             }
             catch (Exception ex)
             {
@@ -265,6 +291,11 @@ namespace IPOClient.Services.Implementations
                              && !c.IPOOrder.IsDeleted
                              && !c.IPOOrder.BuyerMaster.IsDeleted);
 
+                // Firm allotment only applies to Kostak + SubjectTo orders
+                query = query.Where(c =>
+                    c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
+                    c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo);
+
                 // Filter by GroupId (-1 = All groups)
                 if (request.GroupId > 0)
                 {
@@ -274,53 +305,34 @@ namespace IPOClient.Services.Implementations
                 // Filter by InvestorType (-1 or 0 or null = All)
                 if (request.InvestorType.HasValue && request.InvestorType.Value > 0)
                 {
-                    var investorType = request.InvestorType.Value;
-                    // Only Kostak + SubjectTo orders for the selected investor type
-                    query = query.Where(c =>
-                        c.IPOOrder.InvestorType == investorType &&
-                        (c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
-                         c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo));
+                    query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorType.Value);
                 }
 
-                var orderChildren = await query.ToListAsync();
+                // Use ExecuteUpdateAsync for bulk update — no need to load entities into memory
+                var updatedCount = await query.ExecuteUpdateAsync(setters => setters
+                    .SetProperty(c => c.AllotedQty, request.AllotedQty)
+                    .SetProperty(c => c.ModifiedDate, DateTime.UtcNow)
+                    .SetProperty(c => c.ModifiedBy, "FirmAllotment"));
 
-                if (!orderChildren.Any())
+                if (updatedCount == 0)
                 {
                     return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for the selected filters.");
                 }
 
                 var response = new BulkAllotmentCheckResponse
                 {
-                    TotalPANs = orderChildren.Count,
+                    TotalPANs = updatedCount,
+                    Processed = updatedCount,
+                    Updated = updatedCount,
+                    Allotted = updatedCount,
                     Results = new List<AllotmentPanResult>()
                 };
 
-                foreach (var child in orderChildren)
-                {
-                    child.AllotedQty = request.AllotedQty;
-                    child.ModifiedDate = DateTime.UtcNow;
-                    child.ModifiedBy = "FirmAllotment";
-                    response.Updated++;
-                    response.Allotted++;
-
-                    response.Results.Add(new AllotmentPanResult
-                    {
-                        POChildId = child.POChildId,
-                        PanNumber = child.PANNumber ?? "",
-                        Status = "Firm Allotted",
-                        AllottedShares = request.AllotedQty
-                    });
-                }
-
-                response.Processed = response.TotalPANs;
-
-                await _dbContext.SaveChangesAsync();
-
-                _logger.LogInformation("Firm allotment completed: {Count} records updated for IPO {IpoId}, Group {GroupId}",
-                    response.Updated, request.IpoId, request.GroupId);
+                _logger.LogInformation("Firm allotment completed: {Count} records updated for IPO {IpoId}, Group {GroupId}, InvestorType {InvestorType}",
+                    updatedCount, request.IpoId, request.GroupId, request.InvestorType);
 
                 return ReturnData<BulkAllotmentCheckResponse>.SuccessResponse(response,
-                    $"Firm allotment applied to {response.Updated} records.");
+                    $"Firm allotment applied to {updatedCount} records.");
             }
             catch (Exception ex)
             {
@@ -349,7 +361,48 @@ namespace IPOClient.Services.Implementations
 
         #endregion
 
-        #region MUFG Intime (Link Intime) - TESTED & WORKING
+        #region MUFG Intime (Link Intime) - Updated for new portal at in.mpms.mufg.com
+
+        private const string MufgBaseUrl = "https://in.mpms.mufg.com/Initial_Offer/";
+        private const string MufgOrigin = "https://in.mpms.mufg.com";
+        private const string MufgReferer = "https://in.mpms.mufg.com/Initial_Offer/public-issues.html";
+
+        private static string MufgAesEncrypt(string plainText)
+        {
+            var keyBytes = System.Text.Encoding.UTF8.GetBytes("8080808080808080");
+            using var aes = System.Security.Cryptography.Aes.Create();
+            aes.Key = keyBytes;
+            aes.IV = keyBytes;
+            aes.Mode = System.Security.Cryptography.CipherMode.CBC;
+            aes.Padding = System.Security.Cryptography.PaddingMode.PKCS7;
+            using var encryptor = aes.CreateEncryptor();
+            var plainBytes = System.Text.Encoding.UTF8.GetBytes(plainText);
+            var encrypted = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+            return Convert.ToBase64String(encrypted);
+        }
+
+        private async Task<string> MufgGenerateTokenAsync(HttpClient client)
+        {
+            try
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, MufgBaseUrl + "IPO.aspx/generateToken");
+                req.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+                req.Headers.Add("X-Requested-With", "XMLHttpRequest");
+                req.Headers.Add("Origin", MufgOrigin);
+                req.Headers.Referrer = new Uri(MufgReferer);
+
+                var resp = await client.SendAsync(req);
+                var json = await resp.Content.ReadAsStringAsync();
+                var match = Regex.Match(json, @"""d""\s*:\s*""([^""]+)""");
+                if (match.Success)
+                    return MufgAesEncrypt(match.Groups[1].Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "MUFG generateToken failed");
+            }
+            return "";
+        }
 
         private async Task<List<IPOAllotmentCompany>> GetIPOsFromMUFGIntimeAsync()
         {
@@ -359,12 +412,11 @@ namespace IPOClient.Services.Implementations
             {
                 var client = _httpClientFactory.CreateClient("Registrar");
 
-                var request = new HttpRequestMessage(HttpMethod.Post,
-                    "https://in.mpms.mufg.com/Initial_Offer/IPO.aspx/GetDetails");
+                var request = new HttpRequestMessage(HttpMethod.Post, MufgBaseUrl + "IPO.aspx/GetDetails");
                 request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
                 request.Headers.Add("X-Requested-With", "XMLHttpRequest");
-                request.Headers.Add("Origin", "https://in.mpms.mufg.com");
-                request.Headers.Referrer = new Uri("https://in.mpms.mufg.com/Initial_Offer/public-issues.html");
+                request.Headers.Add("Origin", MufgOrigin);
+                request.Headers.Referrer = new Uri(MufgReferer);
 
                 var response = await client.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
@@ -415,24 +467,27 @@ namespace IPOClient.Services.Implementations
             {
                 var client = _httpClientFactory.CreateClient("Registrar");
 
-                // MUFG uses ASP.NET WebMethod for allotment check
-                var request = new HttpRequestMessage(HttpMethod.Post,
-                    "https://in.mpms.mufg.com/Initial_Offer/IPO.aspx/SearchIPOAllotment");
-                request.Headers.Add("X-Requested-With", "XMLHttpRequest");
-                request.Headers.Add("Origin", "https://in.mpms.mufg.com");
-                request.Headers.Referrer = new Uri("https://in.mpms.mufg.com/Initial_Offer/public-issues.html");
+                // Step 1: Get encrypted session token (required by new portal)
+                var token = await MufgGenerateTokenAsync(client);
 
-                var jsonBody = $"{{\"companyId\":\"{companyCode}\",\"panNo\":\"{panNumber.ToUpper()}\",\"searchBy\":\"PAN\"}}";
+                // Step 2: Search by PAN — CHKVAL=1 means PAN search mode on the new portal
+                var request = new HttpRequestMessage(HttpMethod.Post, MufgBaseUrl + "IPO.aspx/SearchOnPan");
+                request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+                request.Headers.Add("Origin", MufgOrigin);
+                request.Headers.Referrer = new Uri(MufgReferer);
+
+                var jsonBody = $"{{\"clientid\":\"{companyCode}\",\"PAN\":\"{panNumber.ToUpper()}\",\"IFSC\":\"\",\"CHKVAL\":\"1\",\"token\":\"{token}\"}}";
                 request.Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
 
                 var response = await client.SendAsync(request);
+                var responseText = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("MUFG allotment check returned {StatusCode}", response.StatusCode);
-                    return null;
+                    var errorSnippet = responseText?.Length > 300 ? responseText[..300] : responseText;
+                    _logger.LogWarning("MUFG allotment check returned {StatusCode} for PAN {PAN}. Response: {Response}",
+                        response.StatusCode, panNumber, errorSnippet);
+                    throw new Exception($"MUFG returned HTTP {(int)response.StatusCode}: {errorSnippet}");
                 }
-
-                var responseText = await response.Content.ReadAsStringAsync();
 
                 var result = new IPOAllotmentResult
                 {
@@ -441,33 +496,58 @@ namespace IPOClient.Services.Implementations
                     Registrar = "Linkin"
                 };
 
-                if (string.IsNullOrWhiteSpace(responseText) ||
-                    responseText.Contains("No record", StringComparison.OrdinalIgnoreCase) ||
-                    responseText.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
-                    responseText.Contains("no data", StringComparison.OrdinalIgnoreCase))
+                // Decode JSON-escaped XML from the "d" field
+                var xmlMatch = Regex.Match(responseText, @"""d""\s*:\s*""(.+?)""(?:\s*\})", RegexOptions.Singleline);
+                if (!xmlMatch.Success)
+                {
+                    result.Status = "Not Allotted";
+                    result.AllottedShares = 0;
+                    return result;
+                }
+
+                // JSON unicode escapes (\u003c etc.) — use JsonSerializer to decode properly
+                var xmlString = System.Text.Json.JsonSerializer.Deserialize<string>($"\"{xmlMatch.Groups[1].Value}\"") ?? "";
+                var xDoc = XDocument.Parse(xmlString.Trim());
+
+                // Table1/Msg = error or "No Record Found" message from server
+                var msgEl = xDoc.Descendants("Table1").FirstOrDefault()?.Element("Msg");
+                if (msgEl != null)
+                {
+                    _logger.LogDebug("MUFG SearchOnPan returned Msg for PAN {PAN}: {Msg}", panNumber, msgEl.Value);
+                    result.Status = "Not Allotted";
+                    result.AllottedShares = 0;
+                    return result;
+                }
+
+                // Table = allotment record; empty <NewDataSet /> means no record
+                var table = xDoc.Descendants("Table").FirstOrDefault();
+                if (table == null)
+                {
+                    result.Status = "Not Allotted";
+                    result.AllottedShares = 0;
+                    return result;
+                }
+
+                // Fields: ALLOT = shares allotted, PEMNDG = IPO name
+                var allotText = table.Element("ALLOT")?.Value?.Trim();
+                if (int.TryParse(allotText, out int allotted) && allotted > 0)
+                {
+                    result.Status = "Allotted";
+                    result.AllottedShares = allotted;
+                }
+                else
                 {
                     result.Status = "Not Allotted";
                     result.AllottedShares = 0;
                 }
-                else
-                {
-                    // Try to parse allotment details from the response
-                    result.Status = "Allotted";
-                    var sharesMatch = Regex.Match(responseText, @"(\d+)\s*(?:shares|equity|Shares)", RegexOptions.IgnoreCase);
-                    if (sharesMatch.Success && int.TryParse(sharesMatch.Groups[1].Value, out int shares))
-                        result.AllottedShares = shares;
-
-                    var appNoMatch = Regex.Match(responseText, @"(?:application|appl)[\s_.-]*(?:no|number|#)?[\s:]*(\w+)", RegexOptions.IgnoreCase);
-                    if (appNoMatch.Success)
-                        result.ApplicationNumber = appNoMatch.Groups[1].Value;
-                }
+                result.CompanyName = table.Element("PEMNDG")?.Value?.Trim() ?? companyCode;
 
                 return result;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "MUFG allotment check failed for PAN {PAN}", panNumber);
-                return null;
+                throw; // Let the bulk check catch this and add to Errors list
             }
         }
 

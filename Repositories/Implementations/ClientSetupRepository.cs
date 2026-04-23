@@ -72,7 +72,7 @@ namespace IPOClient.Repositories.Implementations
         {
             var query = _context.Set<IPO_ClientSetup>()
                 .Include(c => c.Group)
-                .Where(c => c.ClientId == id && c.CompanyId == companyId);
+                .Where(c => c.ClientId == id && (companyId == 0 || c.CompanyId == companyId));
 
             if (!includeDeleted)
                 query = query.Where(c => !c.IsDeleted);

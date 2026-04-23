@@ -37,7 +37,7 @@ namespace IPOClient.Services.Implementations
                 var ipoId = await _buyerPlaceOrderRepository.CreateAsync(request, createdByUserId, companyId);
                 var createdIPO = await _buyerPlaceOrderRepository.GetByIdAsync(ipoId, companyId);
 
-                return ReturnData<BuyerPlaceOrderResponse>.SuccessResponse(MapToIPOResponse(createdIPO!), "Buy place order successfully", 201);
+                return ReturnData<BuyerPlaceOrderResponse>.SuccessResponse(await MapToIPOResponseAsync(createdIPO!), "Buy place order successfully", 201);
             }
             catch (Exception ex)
             {
@@ -50,7 +50,7 @@ namespace IPOClient.Services.Implementations
             {
                 var placeorderdata = await _buyerPlaceOrderRepository.GetByIdAsync(masterId, companyId);
 
-                return ReturnData<BuyerPlaceOrderResponse>.SuccessResponse(MapToIPOResponse(placeorderdata!), "Place order data retrieved successfully", 200);
+                return ReturnData<BuyerPlaceOrderResponse>.SuccessResponse(await MapToIPOResponseAsync(placeorderdata!), "Place order data retrieved successfully", 200);
             }
             catch (Exception ex)
             {
@@ -63,6 +63,10 @@ namespace IPOClient.Services.Implementations
             {
                 var orders = await _buyerPlaceOrderRepository.GetTopFivePlaceOrderListAsync(ipoId, companyId);
 
+                // Get PreOpenPrice for EffectiveRate display
+                var ipoMasterForRate = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var preOpenPriceForRate = ipoMasterForRate?.OpenIPOPrice ?? 0;
+
                 var response = new List<BuyerOrderResponse>();
 
                 foreach (var (order, index) in orders.Select((o, i) => (o, i)))
@@ -71,6 +75,13 @@ namespace IPOClient.Services.Implementations
                     var firstChild = order.OrderChild?.FirstOrDefault();
                     var groupId = firstChild?.GroupId ?? 0;
                     var group = groupId > 0 ? await _groupRepository.GetByIdAsync(groupId, companyId) : null;
+
+                    // Show EffectiveRate for Premium/CALL/PUT (like old app)
+                    bool isPremOrOpt = order.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                       order.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                       order.OrderCategory == (int)IPOOrderCategory.PUT;
+                    var effectiveRate = order.EffectiveRate ??
+                        (isPremOrOpt && preOpenPriceForRate > 0 ? order.Rate - preOpenPriceForRate : (decimal?)null);
 
                     response.Add(new BuyerOrderResponse
                     {
@@ -87,7 +98,8 @@ namespace IPOClient.Services.Implementations
                         InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
                         PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
                         Quantity = order.Quantity,
-                        Rate = order.Rate,
+                        Rate = effectiveRate ?? order.Rate,
+                        EffectiveRate = effectiveRate,
                         DateTime = order.DateTime,
                         Remark=order.Remarks
                     });
@@ -112,18 +124,29 @@ namespace IPOClient.Services.Implementations
                         .ErrorResponse("Order not found", 404);
                 // Get GroupId from first child (all children have same GroupId)
                 var firstChild = order.OrderChild?.FirstOrDefault();
+
+                // Calculate EffectiveRate on the fly if not stored in DB
+                var ipoForEdit = await _ipoRepository.GetByIdAsync(order.BuyerMaster.IPOId, companyId);
+                var preOpenForEdit = ipoForEdit?.OpenIPOPrice ?? 0;
+                bool isPremiumOrOptionEdit = order.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                              order.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                              order.OrderCategory == (int)IPOOrderCategory.PUT;
+                var effectiveRateEdit = order.EffectiveRate ??
+                    (isPremiumOrOptionEdit && preOpenForEdit > 0 ? order.Rate - preOpenForEdit : (decimal?)null);
+
                 var response = new BuyerOrderResponse
                 {
                     SrNo = 1, // single record
                     OrderId = order.OrderId,
                     BuyerMasterId = order.BuyerMaster.BuyerMasterId,
-                    GroupName = firstChild?.Group?.GroupName ?? "-", 
+                    GroupName = firstChild?.Group?.GroupName ?? "-",
                     OrderTypeName = ((IPOOrderType)order.OrderType).ToString(),
                     OrderCategoryName = ((IPOOrderCategory)order.OrderCategory).ToString(),
                     InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
                     PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
                     Quantity = order.Quantity,
-                    Rate = order.Rate,
+                    Rate = effectiveRateEdit ?? order.Rate,
+                    EffectiveRate = effectiveRateEdit,
                     DateTime = order.DateTime,
                     OrderCategory=order.OrderCategory,
                     OrderType=order.OrderType,
@@ -145,10 +168,13 @@ namespace IPOClient.Services.Implementations
             try
             {
                 var orders = await _buyerPlaceOrderRepository.GetOrderListAsync(request, companyId, ipoId);
+                var ipoForRate = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var preOpenForRate = ipoForRate?.OpenIPOPrice ?? 0;
                 var responses = orders
                .Select((order, index) => MapToOrderResponse(
                  order,
-                 srNo: index + 1
+                 srNo: index + 1,
+                 preOpenPrice: preOpenForRate
                    ))
                  .ToList();
 
@@ -510,26 +536,55 @@ namespace IPOClient.Services.Implementations
             }
         }
 
+        public async Task<ReturnData> FixAllotedQtyFromLotSizeAsync(int ipoId, int companyId)
+        {
+            try
+            {
+                var count = await _buyerPlaceOrderRepository.FixAllotedQtyFromLotSizeAsync(ipoId, companyId);
+                return ReturnData.SuccessResponse($"Fixed AllotedQty for {count} child orders based on lot size", 200);
+            }
+            catch (Exception ex)
+            {
+                return ReturnData.ErrorResponse($"Error fixing AllotedQty: {ex.Message}", 500);
+            }
+        }
+
         // MAP ENTITY TO RESPONSE DTO
-        private BuyerPlaceOrderResponse MapToIPOResponse(IPO_BuyerPlaceOrderMaster buyer)
+        private async Task<BuyerPlaceOrderResponse> MapToIPOResponseAsync(IPO_BuyerPlaceOrderMaster buyer)
         {
             // Get GroupId from first child of first order (all children have same GroupId)
             var firstChild = buyer.Orders?.FirstOrDefault()?.OrderChild?.FirstOrDefault();
+
+            // Get PreOpenPrice for on-the-fly EffectiveRate calculation
+            var ipoMaster = await _ipoRepository.GetByIdAsync(buyer.IPOId, buyer.CompanyId ?? 0);
+            var preOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
             return new BuyerPlaceOrderResponse
             {
                 BuyerMasterId = buyer.BuyerMasterId,
                 IPOId = buyer.IPOId,
                 GroupId = firstChild?.GroupId ?? 0,
-                Orders = buyer.Orders.Select(o => new BuyerOrderResponse
+                Orders = buyer.Orders.Select(o =>
                 {
-                    OrderId = o.OrderId,
-                    OrderType = o.OrderType,
-                    OrderCategory = o.OrderCategory,
-                    InvestorType = o.InvestorType,
-                    PremiumStrikePrice = o.PremiumStrikePrice,
-                    Quantity = o.Quantity,
-                    Rate = o.Rate,
-                    DateTime = o.DateTime
+                    // Calculate EffectiveRate on the fly if not stored in DB
+                    bool isPremiumOrOption = o.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                             o.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                             o.OrderCategory == (int)IPOOrderCategory.PUT;
+                    var effectiveRate = o.EffectiveRate ??
+                        (isPremiumOrOption && preOpenPrice > 0 ? o.Rate - preOpenPrice : (decimal?)null);
+
+                    return new BuyerOrderResponse
+                    {
+                        OrderId = o.OrderId,
+                        OrderType = o.OrderType,
+                        OrderCategory = o.OrderCategory,
+                        InvestorType = o.InvestorType,
+                        PremiumStrikePrice = o.PremiumStrikePrice,
+                        Quantity = o.Quantity,
+                        Rate = effectiveRate ?? o.Rate,
+                        EffectiveRate = effectiveRate,
+                        DateTime = o.DateTime
+                    };
                 }).ToList()
             };
 
@@ -544,14 +599,47 @@ namespace IPOClient.Services.Implementations
             var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : (ipoPreOpenPrice ?? child.Group?.IPOMaster?.OpenIPOPrice ?? 0);
             // Get IPOPrice (Upper Price Band) - use passed in value or fallback to Group.IPOMaster
             var ipoPriceFinal = ipoPrice ?? child.Group?.IPOMaster?.IPO_Upper_Price_Band ?? 0;
-            // Get Rate from order
-            var rate = order.Rate;
-            // Get AllotedQty
+            var orderCategory = order.OrderCategory;
+            bool isPremiumOrOption = orderCategory == (int)IPOOrderCategory.Premium ||
+                                     orderCategory == (int)IPOOrderCategory.CALL ||
+                                     orderCategory == (int)IPOOrderCategory.PUT;
+            var rate = isPremiumOrOption && order.EffectiveRate.HasValue
+                ? order.EffectiveRate.Value
+                : order.Rate;
+            // Get AllotedQty (aggregated from all children when coming from billing)
             var allotedQty = child.AllotedQty ?? 0;
 
-            // New Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
-            // If AllotedQty is 0, Amount should be 0
-            var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPriceFinal) * allotedQty - rate;
+            // Formula depends on OrderCategory:
+            // Kostak(1)/SubjectTo(2): Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
+            // Premium(3): Amount = (PreOpenPrice - IPOPrice - Rate) × AllotedQty
+            // CALL(4): Amount = Rate × AllotedQty (rate-only)
+            // PUT(5):  Amount = (IPOPrice - PreOpenPrice - Rate) × AllotedQty
+            decimal amount;
+            if (orderCategory == (int)IPOOrderCategory.CALL)
+                amount = -rate * allotedQty;
+            else if (orderCategory == (int)IPOOrderCategory.PUT)
+            {
+                decimal putSp = 0;
+                if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                    && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                    putSp = parsedSp;
+                amount = (ipoPriceFinal - preOpenPrice - rate + putSp) * allotedQty;
+            }
+            else if (isPremiumOrOption) // Premium
+                amount = (preOpenPrice - ipoPriceFinal - rate) * allotedQty;
+            else // Kostak / SubjectTo
+                // If allotment checked (PAN filled) but got 0 shares: amount = 0
+                // If no allotment check (no PAN): charge the rate even with allotedQty=0
+                amount = (allotedQty == 0 && !string.IsNullOrEmpty(child.PANNumber))
+                    ? 0
+                    : (preOpenPrice - ipoPriceFinal) * allotedQty - rate;
+
+            if (order.OrderType == (int)IPOOrderType.SELL)
+                amount = -amount;
+
+            // Calculate display EffectiveRate on-the-fly if not stored
+            var displayEffectiveRate = order.EffectiveRate ??
+                (isPremiumOrOption && preOpenPrice > 0 ? rate - preOpenPrice : (decimal?)null);
 
             return new BuyerOrderResponse
             {
@@ -573,25 +661,34 @@ namespace IPOClient.Services.Implementations
 
                 PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
                 Quantity = order.Quantity,
-                Rate = order.Rate,
+                Rate = order.EffectiveRate ?? order.Rate, // Show EffectiveRate if available
                 DateTime = order.DateTime,
 
                 // SUB-CHILD FIELDS
                 PanNumber = child.PANNumber ?? "",
                 ClientName = child.ClientName ?? "",
-                AllotedQty = allotedQty,
+                AllotedQty = allotedQty == 0 ? "-" : allotedQty.ToString(),
                 DematNumber = child.DematNumber ?? "",
                 ApplicationNumber = child.ApplicationNo ?? "",
                 Remark = order.Remarks,
                 PreOpenPrice = preOpenPrice,
-                Amount = amount
+                Amount = amount,
+                EffectiveRate = displayEffectiveRate
             };
 
         }
-        private BuyerOrderResponse MapToOrderResponse(IPO_BuyerOrder order, int srNo)
+        private BuyerOrderResponse MapToOrderResponse(IPO_BuyerOrder order, int srNo, decimal preOpenPrice = 0)
         {
             // Get Group from first child (all children have same GroupId)
             var firstChild = order?.OrderChild?.FirstOrDefault();
+
+            // Calculate EffectiveRate on the fly if not stored in DB
+            bool isPremiumOrOption = order.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                     order.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                     order.OrderCategory == (int)IPOOrderCategory.PUT;
+            var effectiveRate = order.EffectiveRate ??
+                (isPremiumOrOption && preOpenPrice > 0 ? order.Rate - preOpenPrice : (decimal?)null);
+
             return new BuyerOrderResponse
             {
                 SrNo = srNo,
@@ -607,7 +704,8 @@ namespace IPOClient.Services.Implementations
                 InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
                 PremiumStrikePrice = order.PremiumStrikePrice?.ToString() ?? "-",
                 Quantity = order.Quantity,
-                Rate = order.Rate,
+                Rate = effectiveRate ?? order.Rate,
+                EffectiveRate = effectiveRate,
                 DateTime = order.DateTime
             };
 
@@ -620,9 +718,21 @@ namespace IPOClient.Services.Implementations
                 // Get orders from IPO_BuyerOrder table (master order level, not child level)
                 var pagedOrders = await _buyerPlaceOrderRepository.GetOrderPagedListAsync(request, companyId, ipoId);
 
+                // Get PreOpenPrice for on-the-fly EffectiveRate calculation
+                var ipoMasterForRate = await _ipoRepository.GetByIdAsync(ipoId, companyId);
+                var preOpenPriceForRate = ipoMasterForRate?.OpenIPOPrice ?? 0;
+
                 // Map IPO_BuyerOrder to BuyerOrderResponse
                 var responses = pagedOrders.Items?.Select((order, index) => {
                     var firstChild = order.OrderChild?.FirstOrDefault();
+
+                    // Calculate EffectiveRate on the fly if not stored in DB
+                    bool isPremiumOrOption = order.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                             order.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                             order.OrderCategory == (int)IPOOrderCategory.PUT;
+                    var effectiveRate = order.EffectiveRate ??
+                        (isPremiumOrOption && preOpenPriceForRate > 0 ? order.Rate - preOpenPriceForRate : (decimal?)null);
+
                     return new BuyerOrderResponse
                     {
                         SrNo = request.Skip + index + 1,
@@ -638,7 +748,8 @@ namespace IPOClient.Services.Implementations
                         InvestorTypeName = ((IPOInvestorType)order.InvestorType).ToString(),
                         PremiumStrikePrice = order.PremiumStrikePrice ?? "-",
                         Quantity = order.Quantity,
-                        Rate = order.Rate,
+                        Rate = effectiveRate ?? order.Rate,
+                        EffectiveRate = effectiveRate,
                         DateTime = order.DateTime
                     };
                 }).ToList() ?? new List<BuyerOrderResponse>();
@@ -751,14 +862,41 @@ namespace IPOClient.Services.Implementations
                         // Get PreOpenPrice: Use child's PreOpenPrice, fallback to IPO's if child has 0
                         var preOpenPrice = row.PreOpenPrice > 0 ? row.PreOpenPrice : ipoPreOpenPrice;
 
-                        // Get Rate from order
-                        var rate = order.Rate;
+                        var orderCategory = order.OrderCategory;
+                        bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                         orderCategory == (int)IPOOrderCategory.CALL ||
+                                         orderCategory == (int)IPOOrderCategory.PUT;
+                        var rate = isPremOpt && order.EffectiveRate.HasValue
+                            ? order.EffectiveRate.Value
+                            : order.Rate;
 
-                        // New Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
-                        // If AllotedQty is 0, Amount should be 0
-                        // For SELL orders, negate the amount
-                        var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
-                        if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                        decimal amount;
+                        if (orderCategory == (int)IPOOrderCategory.CALL)
+                        {
+                            amount = -rate * allotedQty;
+                        }
+                        else if (orderCategory == (int)IPOOrderCategory.PUT)
+                        {
+                            // PUT: subtract StrikePrice from rate (StrikePrice is NOT baked into stored Rate for PUT)
+                            decimal putSp = 0;
+                            if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                                && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                                putSp = parsedSp;
+                            amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                        }
+                        else if (isPremOpt)
+                        {
+                            amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                        }
+                        else
+                        {
+                            // If allotment checked (PAN filled) but got 0 shares: amount = 0
+                            amount = (allotedQty == 0 && !string.IsNullOrEmpty(row.PANNumber))
+                                ? 0
+                                : (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        }
+
+                        if (order.OrderType == (int)IPOOrderType.SELL)
                             amount = -amount;
 
                         // Count = number of child rows (+1 for BUY, -1 for SELL)
@@ -784,20 +922,23 @@ namespace IPOClient.Services.Implementations
                             res.Premium.Billing += amount;
                         }
 
-                        // ===== OPTIONS
-                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice) &&
-                            order.PremiumStrikePrice != "Application" &&
-                            order.PremiumStrikePrice != "Premium")
+                        // ===== OPTIONS (CALL/PUT) — assign by OrderCategory, not OrderType
+                        if (order.OrderCategory == (int)IPOOrderCategory.CALL)
                         {
                             res.Options.InvestorTypeId = order.InvestorType;
                             res.Options.OrderCategoryId = order.OrderCategory;
-                            if (order.OrderType == (int)IPOOrderType.BUY)
-                                res.Options.CallAmount += amount;
-                            else
-                                res.Options.PutAmount += amount;
+                            res.Options.CallAmount += amount;
+                        }
+                        else if (order.OrderCategory == (int)IPOOrderCategory.PUT)
+                        {
+                            res.Options.InvestorTypeId = order.InvestorType;
+                            res.Options.OrderCategoryId = order.OrderCategory;
+                            res.Options.PutAmount += amount;
                         }
 
-                        res.TotalShares += allotedDelta;
+                        // TotalShares excludes CALL/PUT (matches old app)
+                        if (orderCategory != (int)IPOOrderCategory.CALL && orderCategory != (int)IPOOrderCategory.PUT)
+                            res.TotalShares += allotedDelta;
                         res.TotalAmount += amount;
                     }
 
@@ -949,10 +1090,36 @@ namespace IPOClient.Services.Implementations
                         var order = row.IPOOrder;
                         var allotedQty = row.AllotedQty ?? 0;
                         var preOpenPrice = row.PreOpenPrice > 0 ? row.PreOpenPrice : ipoPreOpenPrice;
-                        var rate = order.Rate;
-                        // If AllotedQty is 0, Amount should be 0
-                        var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
-                        if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                        var orderCategory = order.OrderCategory;
+                        bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                         orderCategory == (int)IPOOrderCategory.CALL ||
+                                         orderCategory == (int)IPOOrderCategory.PUT;
+                        var rate = isPremOpt && order.EffectiveRate.HasValue
+                            ? order.EffectiveRate.Value
+                            : order.Rate;
+
+                        decimal amount;
+                        if (orderCategory == (int)IPOOrderCategory.CALL)
+                            amount = -rate * allotedQty;
+                        else if (orderCategory == (int)IPOOrderCategory.PUT)
+                        {
+                            decimal putSp = 0;
+                            if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                                && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                                putSp = parsedSp;
+                            amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                        }
+                        else if (isPremOpt)
+                            amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                        else
+                            // If allotment checked (PAN filled) but got 0 shares: amount = 0
+                            amount = (allotedQty == 0 && !string.IsNullOrEmpty(row.PANNumber))
+                                ? 0
+                                : (preOpenPrice - ipoPrice) * allotedQty - rate;
+
+                        // StrikePrice is already added to Rate for CALL
+
+                        if (order.OrderType == (int)IPOOrderType.SELL)
                             amount = -amount;
 
                         var countDelta = order.OrderType == (int)IPOOrderType.BUY ? 1 : -1;
@@ -967,16 +1134,15 @@ namespace IPOClient.Services.Implementations
                             res.Premium.Shares += (int)allotedDelta;
                             res.Premium.Billing += amount;
                         }
-                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice) &&
-                            order.PremiumStrikePrice != "Application" &&
-                            order.PremiumStrikePrice != "Premium")
-                        {
-                            if (order.OrderType == (int)IPOOrderType.BUY)
-                                res.Options.CallAmount += amount;
-                            else
-                                res.Options.PutAmount += amount;
-                        }
-                        res.TotalShares += (int)allotedDelta;
+                        // OPTIONS (CALL/PUT) — assign by OrderCategory, not OrderType
+                        if (order.OrderCategory == (int)IPOOrderCategory.CALL)
+                            res.Options.CallAmount += amount;
+                        else if (order.OrderCategory == (int)IPOOrderCategory.PUT)
+                            res.Options.PutAmount += amount;
+
+                        // TotalShares excludes CALL/PUT (matches old app)
+                        if (orderCategory != (int)IPOOrderCategory.CALL && orderCategory != (int)IPOOrderCategory.PUT)
+                            res.TotalShares += (int)allotedDelta;
                         res.TotalAmount += amount;
                     }
 
@@ -1105,10 +1271,38 @@ namespace IPOClient.Services.Implementations
                     var order = child.IPOOrder;
                     var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
                     var allotedQty = child.AllotedQty ?? 0;
-                    // Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
-                    // If AllotedQty is 0, Amount should be 0
-                    var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
-                    if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                    // Use EffectiveRate for Premium/CALL/PUT
+                    var orderCategory = order.OrderCategory;
+                    bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                     orderCategory == (int)IPOOrderCategory.CALL ||
+                                     orderCategory == (int)IPOOrderCategory.PUT;
+                    var rate = isPremOpt && order.EffectiveRate.HasValue
+                        ? order.EffectiveRate.Value
+                        : order.Rate;
+
+                    decimal amount;
+                    if (orderCategory == (int)IPOOrderCategory.CALL)
+                    {
+                        amount = -rate * allotedQty;
+                    }
+                    else if (orderCategory == (int)IPOOrderCategory.PUT)
+                    {
+                        decimal putSp = 0;
+                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                            && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                            putSp = parsedSp;
+                        amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                    }
+                    else if (isPremOpt) // Premium
+                    {
+                        amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                    }
+                    else // Kostak / SubjectTo
+                    {
+                        amount = (preOpenPrice - ipoPrice) * allotedQty - rate;
+                    }
+
+                    if (order.OrderType == (int)IPOOrderType.SELL)
                         amount = -amount;
 
                     worksheet.Cell(row, 1).Value = srNo++;
@@ -1208,9 +1402,31 @@ namespace IPOClient.Services.Implementations
                     var order = child.IPOOrder;
                     var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
                     var allotedQty = child.AllotedQty ?? 0;
-                    // If AllotedQty is 0, Amount should be 0
-                    var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
-                    if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                    var orderCategory = order.OrderCategory;
+                    bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                     orderCategory == (int)IPOOrderCategory.CALL ||
+                                     orderCategory == (int)IPOOrderCategory.PUT;
+                    var rate = isPremOpt && order.EffectiveRate.HasValue
+                        ? order.EffectiveRate.Value
+                        : order.Rate;
+
+                    decimal amount;
+                    if (orderCategory == (int)IPOOrderCategory.CALL)
+                        amount = -rate * allotedQty;
+                    else if (orderCategory == (int)IPOOrderCategory.PUT)
+                    {
+                        decimal putSp = 0;
+                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                            && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                            putSp = parsedSp;
+                        amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                    }
+                    else if (isPremOpt) // Premium
+                        amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                    else // Kostak / SubjectTo
+                        amount = (preOpenPrice - ipoPrice) * allotedQty - rate;
+
+                    if (order.OrderType == (int)IPOOrderType.SELL)
                         amount = -amount;
 
                     table.AddCell(new PdfPCell(new Phrase(srNo++.ToString(), cellFont)) { Padding = 2 });

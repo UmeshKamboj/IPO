@@ -7,7 +7,7 @@ namespace IPOClient.Repositories.Interfaces
     public interface IIPOAnalysisRepository
     {
         Task<IPO_IPOMaster?> GetIPOMasterAsync(int ipoId, int companyId);
-        Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(int ipoId, int companyId);
+        Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(int ipoId, int companyId, decimal? overridePreOpenPrice = null);
         Task<ShareQtyData> GetShareQtyDataAsync(int ipoId, int companyId);
         Task<ShareQtyData> GetAllotedShareQtyDataAsync(int ipoId, int companyId);
         Task<IPO_Analysis?> GetAnalysisAsync(int ipoId, int analysisType, int companyId);

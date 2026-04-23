@@ -21,7 +21,7 @@ namespace IPOClient.Repositories.Implementations
 
         public async Task<int> CreateAsync(IPOBuyerPlaceOrderRequest request, int userId, int companyId)
         {
-            // Get IPO's PreOpenPrice to set on child orders
+            // Get IPO master for PreOpenPrice and lot sizes
             var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == request.IPOId && i.CompanyId == companyId);
             var preOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
 
@@ -45,6 +45,16 @@ namespace IPOClient.Repositories.Implementations
                     premiumStrikePrice = reqOrder.ApplicateRate ? "Premium" : "Application";
                 }
 
+                // User enters the rate as-is. Store it directly.
+                // For Premium/CALL/PUT: also store as EffectiveRate so display always shows what user entered.
+                bool isPremOrOpt = reqOrder.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                   reqOrder.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                   reqOrder.OrderCategory == (int)IPOOrderCategory.PUT;
+
+                var enteredRate = reqOrder.Rate;
+                var storedRate = enteredRate;
+                decimal? calcEffectiveRate = isPremOrOpt ? enteredRate : null;
+
                 var order = new IPO_BuyerOrder
                 {
                     OrderType = reqOrder.OrderType,
@@ -53,15 +63,23 @@ namespace IPOClient.Repositories.Implementations
                     PremiumStrikePrice = premiumStrikePrice,
                     ApplicateRate = reqOrder.ApplicateRate,
                     Quantity = reqOrder.Quantity,
-                    Rate = reqOrder.Rate,
+                    Rate = storedRate,
                     DateTime = request.DateTime,
                     CreatedBy = userId,
                     CompanyId = companyId,
                     OrderCreatedDate= DateTime.UtcNow,
                     OrderChild = new List<IPO_PlaceOrderChild>(),
                     Remarks= request.RemarksIds,
-                    OrderSource = (int)OrderSourceType.Manual
+                    OrderSource = (int)OrderSourceType.Manual,
+                    EffectiveRate = calcEffectiveRate
                 };
+
+                // AllotedQty: Premium/CALL/PUT = 1 per child (rate is per-share)
+                // Kostak/SubjectTo (Retail/SHNI/BHNI) = null (set later by allotment check)
+                int? allotedQty = (reqOrder.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                   reqOrder.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                   reqOrder.OrderCategory == (int)IPOOrderCategory.PUT)
+                    ? 1 : null;
 
                 // split
                 for (int i = 0; i < reqOrder.Quantity; i++)
@@ -71,6 +89,7 @@ namespace IPOClient.Repositories.Implementations
                         Quantity = 1,
                         GroupId = request.GroupId, // Set GroupId from master
                         PreOpenPrice = preOpenPrice, // Set from IPO parent
+                        AllotedQty = allotedQty, // Set lot size based on investor type
                         CreatedBy = userId,
                         CompanyId = companyId,
                         ChildOrderCreatedDate= DateTime.UtcNow,
@@ -125,7 +144,7 @@ namespace IPOClient.Repositories.Implementations
 
                         order.Remarks = string.Join(", ", remarkNames);
                     }
-                       
+
                 }
                 else
                 {
@@ -502,8 +521,45 @@ namespace IPOClient.Repositories.Implementations
                     var count = g.Count();
                     var totalAmount = g.Sum(c =>
                     {
+                        var allotedQty = c.AllotedQty ?? 0;
                         var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
-                        return (preOpenPrice - ipoPrice) * (c.AllotedQty ?? 0) - c.IPOOrder.Rate;
+                        var orderCategory = c.IPOOrder.OrderCategory;
+                        bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                         orderCategory == (int)IPOOrderCategory.CALL ||
+                                         orderCategory == (int)IPOOrderCategory.PUT;
+                        var rate = isPremOpt && c.IPOOrder.EffectiveRate.HasValue
+                            ? c.IPOOrder.EffectiveRate.Value
+                            : c.IPOOrder.Rate;
+
+                        decimal amount;
+                        if (orderCategory == (int)IPOOrderCategory.CALL)
+                        {
+                            // CALL: rate-only (Rate × AllotedQty)
+                            amount = -rate * allotedQty;
+                        }
+                        else if (orderCategory == (int)IPOOrderCategory.PUT)
+                        {
+                            decimal putSp = 0;
+                            if (!string.IsNullOrEmpty(c.IPOOrder.PremiumStrikePrice)
+                                && decimal.TryParse(c.IPOOrder.PremiumStrikePrice, out var parsedSp))
+                                putSp = parsedSp;
+                            amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                        }
+                        else if (isPremOpt) // Premium
+                        {
+                            amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                        }
+                        else // Kostak / SubjectTo
+                        {
+                            amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        }
+
+                        // StrikePrice is already added to Rate for CALL
+
+                        if (c.IPOOrder.OrderType == (int)IPOOrderType.SELL)
+                            amount = -amount;
+
+                        return amount;
                     });
                     var avgRate = count > 0 ? totalAmount / count : 0;
 
@@ -820,22 +876,23 @@ namespace IPOClient.Repositories.Implementations
                 .Include(c => c.IPOOrder)
                     .ThenInclude(o => o.BuyerMaster)
                 .Include(c => c.Group)
+                .AsSplitQuery() // Split into separate queries to avoid cartesian explosion
                 .Where(c => c.CompanyId == companyId &&
                            c.IPOOrder.BuyerMaster.IPOId == ipoId &&
                            c.IPOOrder.BuyerMaster.IsActive && !c.IsDeleted && !c.IPOOrder.BuyerMaster.IsDeleted);
 
-            // Global search across multiple fields
+            // Global search across multiple fields (SQL Server uses case-insensitive collation by default)
             if (!string.IsNullOrWhiteSpace(request.SearchValue))
             {
-                var searchLower = request.SearchValue.ToLower();
+                var searchValue = request.SearchValue.Trim();
                 query = query.Where(c =>
-                    (c.PANNumber != null && c.PANNumber.ToLower().Contains(searchLower)) ||
-                    (c.ClientName != null && c.ClientName.ToLower().Contains(searchLower)) ||
-                    (c.DematNumber != null && c.DematNumber.ToLower().Contains(searchLower)) ||
-                    (c.ApplicationNo != null && c.ApplicationNo.ToLower().Contains(searchLower)) ||
+                    (c.PANNumber != null && c.PANNumber.Contains(searchValue)) ||
+                    (c.ClientName != null && c.ClientName.Contains(searchValue)) ||
+                    (c.DematNumber != null && c.DematNumber.Contains(searchValue)) ||
+                    (c.ApplicationNo != null && c.ApplicationNo.Contains(searchValue)) ||
                     (c.Group != null &&
                      c.Group.GroupName != null &&
-                     c.Group.GroupName.ToLower().Contains(searchLower))
+                     c.Group.GroupName.Contains(searchValue))
                 );
             }
 
@@ -873,7 +930,14 @@ namespace IPOClient.Repositories.Implementations
             order.OrderType = request.OrderType;
             order.OrderCategory = request.OrderCategory;
             order.InvestorType = request.InvestorType;
+
+            // Store Rate as entered by user - no conversion
+            bool isPremiumOrOption = request.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                     request.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                     request.OrderCategory == (int)IPOOrderCategory.PUT;
             order.Rate = request.Rate;
+            order.EffectiveRate = isPremiumOrOption ? request.Rate : (decimal?)null;
+
             order.ModifiedBy = userId.ToString();
             order.ModifiedDate = DateTime.UtcNow;
             order.DateTime = request.DateTime;
@@ -897,6 +961,15 @@ namespace IPOClient.Repositories.Implementations
             {
                 int addCount = newQty - existingQty;
 
+                // Determine AllotedQty (lot size) based on InvestorType
+                int? allotedQty = order.InvestorType switch
+                {
+                    (int)IPOInvestorType.Retail => (int?)(ipoMaster?.IPO_Retail_Lot_Size),
+                    (int)IPOInvestorType.SHNI => (int?)(ipoMaster?.IPO_SHNI_Lot_Size),
+                    (int)IPOInvestorType.BHNI => (int?)(ipoMaster?.IPO_BHNI_Lot_Size),
+                    _ => null
+                };
+
                 for (int i = 0; i < addCount; i++)
                 {
                     order.OrderChild.Add(new IPO_PlaceOrderChild
@@ -904,6 +977,7 @@ namespace IPOClient.Repositories.Implementations
                         Quantity = 1,
                         GroupId = request.GroupId,
                         PreOpenPrice = preOpenPrice, // Set from IPO parent
+                        AllotedQty = allotedQty, // Set lot size based on investor type
                         CreatedBy = userId,
                         CompanyId = order.CompanyId,
                         ChildOrderCreatedDate = DateTime.UtcNow
@@ -1150,7 +1224,10 @@ namespace IPOClient.Repositories.Implementations
                         OrderCategory = orderCategory,
                         InvestorType = investorType,
                         Quantity = quantity,
-                        Rate = rate,
+                        // For CALL only: add StrikePrice to Rate (PUT stores raw rate)
+                        Rate = orderCategory == (int)IPOOrderCategory.CALL
+                            && !string.IsNullOrEmpty(strikePrice) && decimal.TryParse(strikePrice, out var csvSp)
+                            ? rate + csvSp : rate,
                         PremiumStrikePrice = strikePrice,
                         ApplicateRate = false,
                         DateTime = orderDateTime,
@@ -1158,7 +1235,22 @@ namespace IPOClient.Repositories.Implementations
                         CreatedBy = createdByUserId,
                         CompanyId = companyId,
                         OrderCreatedDate = DateTime.UtcNow,
-                        OrderChild = new List<IPO_PlaceOrderChild>()
+                        OrderChild = new List<IPO_PlaceOrderChild>(),
+                        // EffectiveRate = entered rate for Premium/CALL/PUT
+                        EffectiveRate = (orderCategory == (int)IPOOrderCategory.Premium ||
+                                orderCategory == (int)IPOOrderCategory.CALL ||
+                                orderCategory == (int)IPOOrderCategory.PUT)
+                            ? rate
+                            : (decimal?)null
+                    };
+
+                    // Determine AllotedQty (lot size) based on InvestorType
+                    int? csvAllotedQty = investorType switch
+                    {
+                        (int)IPOInvestorType.Retail => (int?)(ipoMaster?.IPO_Retail_Lot_Size),
+                        (int)IPOInvestorType.SHNI => (int?)(ipoMaster?.IPO_SHNI_Lot_Size),
+                        (int)IPOInvestorType.BHNI => (int?)(ipoMaster?.IPO_BHNI_Lot_Size),
+                        _ => null
                     };
 
                     for (int i = 0; i < quantity; i++)
@@ -1168,6 +1260,7 @@ namespace IPOClient.Repositories.Implementations
                             GroupId = groupId,
                             Quantity = 1,
                             PreOpenPrice = preOpenPrice, // Set from IPO parent
+                            AllotedQty = csvAllotedQty, // Set lot size based on investor type
                             CreatedBy = createdByUserId,
                             CompanyId = companyId,
                             ChildOrderCreatedDate = DateTime.UtcNow
@@ -1187,6 +1280,15 @@ namespace IPOClient.Repositories.Implementations
                             "CSV order data does not match existing order.");
                     }
 
+                    // Determine AllotedQty (lot size) based on InvestorType
+                    int? existAllotedQty = existingOrder.InvestorType switch
+                    {
+                        (int)IPOInvestorType.Retail => (int?)(ipoMaster?.IPO_Retail_Lot_Size),
+                        (int)IPOInvestorType.SHNI => (int?)(ipoMaster?.IPO_SHNI_Lot_Size),
+                        (int)IPOInvestorType.BHNI => (int?)(ipoMaster?.IPO_BHNI_Lot_Size),
+                        _ => null
+                    };
+
                     for (int i = 0; i < quantity; i++)
                     {
                         existingOrder.OrderChild.Add(new IPO_PlaceOrderChild
@@ -1194,6 +1296,7 @@ namespace IPOClient.Repositories.Implementations
                             GroupId = groupId,
                             Quantity = 1,
                             PreOpenPrice = preOpenPrice, // Set from IPO parent
+                            AllotedQty = existAllotedQty, // Set lot size based on investor type
                             CreatedBy = createdByUserId,
                             CompanyId = companyId,
                             ChildOrderCreatedDate = DateTime.UtcNow
@@ -1453,15 +1556,51 @@ namespace IPOClient.Repositories.Implementations
             if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
                 query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
 
-            // Get total count before pagination
-            var totalCount = await query.CountAsync();
+            // Kostak/SubjectTo: show individual child rows (each child = separate row)
+            // Premium/CALL/PUT: group by OrderId (one row per order, use Order Quantity as AllotedQty)
+            var allData = await query
+                .Select(c => new { c.OrderId, c.POChildId, c.AllotedQty, c.IPOOrder.OrderCategory, c.IPOOrder.Quantity, CreatedDate = c.IPOOrder.BuyerMaster.CreatedDate })
+                .ToListAsync();
 
-            // Order and apply pagination
-            query = query.OrderByDescending(c => c.IPOOrder.BuyerMaster.CreatedDate)
-                         .Skip(request.Skip)
-                         .Take(request.PageSize);
+            // Kostak(1) / SubjectTo(2) children stay as individual rows
+            var individualRows = allData
+                .Where(c => c.OrderCategory == (int)IPOOrderCategory.Kostak || c.OrderCategory == (int)IPOOrderCategory.SubjectTo)
+                .Select(c => new { c.OrderId, ChildId = c.POChildId, AllotedQty = c.AllotedQty ?? 0, c.CreatedDate, IsGrouped = false })
+                .ToList();
 
-            var items = await query.ToListAsync();
+            // Premium/CALL/PUT grouped by OrderId — use Order Quantity (not sum of children)
+            var groupedRows = allData
+                .Where(c => c.OrderCategory != (int)IPOOrderCategory.Kostak && c.OrderCategory != (int)IPOOrderCategory.SubjectTo)
+                .GroupBy(c => c.OrderId)
+                .Select(g => new { OrderId = g.Key, ChildId = g.Min(x => x.POChildId), AllotedQty = g.First().Quantity, CreatedDate = g.First().CreatedDate, IsGrouped = true })
+                .ToList();
+
+            var combined = individualRows.Concat(groupedRows)
+                .OrderByDescending(x => x.CreatedDate)
+                .ToList();
+
+            var totalCount = combined.Count;
+            var paged = combined.Skip(request.Skip).Take(request.PageSize).ToList();
+
+            var childIds = paged.Select(x => x.ChildId).ToList();
+            var items = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder).ThenInclude(o => o.BuyerMaster)
+                .Include(c => c.Group)
+                .AsNoTracking()
+                .Where(c => childIds.Contains(c.POChildId))
+                .ToListAsync();
+
+            // Set aggregated AllotedQty for grouped rows
+            foreach (var item in items)
+            {
+                var p = paged.FirstOrDefault(x => x.ChildId == item.POChildId);
+                if (p != null && p.IsGrouped) item.AllotedQty = p.AllotedQty;
+            }
+
+            // Maintain sort order
+            var orderedChildIds = paged.Select(x => x.ChildId).ToList();
+            items = items.OrderBy(c => orderedChildIds.IndexOf(c.POChildId)).ToList();
+
             return new PagedResult<IPO_PlaceOrderChild>(items, totalCount, request.Skip, request.PageSize);
         }
 
@@ -1521,17 +1660,62 @@ namespace IPOClient.Repositories.Implementations
             if (request.InvestorTypeId.HasValue && request.InvestorTypeId.Value > 0)
                 query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorTypeId.Value);
 
-            // Calculate total using new formula: Sum((PreOpenPrice - IPOPrice) × AllotedQty - Rate)
-            // Use child's PreOpenPrice, fallback to IPO's PreOpenPrice if child has 0
-            // If AllotedQty is 0, Amount should be 0
+            // Premium/CALL/PUT: group by OrderId, use Order.Quantity (matches display)
+            // Kostak/SubjectTo: sum per child row (each child has its own amount)
             var items = await query.ToListAsync();
-            var total = items.Sum(c =>
-            {
-                var allotedQty = c.AllotedQty ?? 0;
-                if (allotedQty == 0) return 0m;
-                var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
-                return (preOpenPrice - ipoPrice) * allotedQty - c.IPOOrder.Rate;
-            });
+
+            // Kostak/SubjectTo: per-child calculation
+            var kostakTotal = items
+                .Where(c => c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
+                            c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo)
+                .Sum(c =>
+                {
+                    var order = c.IPOOrder;
+                    var allotedQty = c.AllotedQty ?? 0;
+                    var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
+                    decimal amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - order.Rate;
+                    if (order.OrderType == (int)IPOOrderType.SELL)
+                        amount = -amount;
+                    return amount;
+                });
+
+            // Premium/CALL/PUT: per-order calculation using Order.Quantity
+            var premOptTotal = items
+                .Where(c => c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Premium ||
+                            c.IPOOrder.OrderCategory == (int)IPOOrderCategory.CALL ||
+                            c.IPOOrder.OrderCategory == (int)IPOOrderCategory.PUT)
+                .GroupBy(c => c.OrderId)
+                .Sum(g =>
+                {
+                    var first = g.First();
+                    var order = first.IPOOrder;
+                    var qty = order.Quantity;
+                    var preOpenPrice = first.PreOpenPrice > 0 ? first.PreOpenPrice : ipoPreOpenPrice;
+                    var orderCategory = order.OrderCategory;
+                    var rate = order.EffectiveRate.HasValue
+                        ? order.EffectiveRate.Value
+                        : order.Rate;
+
+                    decimal amount;
+                    if (orderCategory == (int)IPOOrderCategory.CALL)
+                        amount = -rate * qty;
+                    else if (orderCategory == (int)IPOOrderCategory.PUT)
+                    {
+                        decimal putSp = 0;
+                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                            && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                            putSp = parsedSp;
+                        amount = (ipoPrice - preOpenPrice - rate + putSp) * qty;
+                    }
+                    else // Premium
+                        amount = (preOpenPrice - ipoPrice - rate) * qty;
+
+                    if (order.OrderType == (int)IPOOrderType.SELL)
+                        amount = -amount;
+                    return amount;
+                });
+
+            var total = kostakTotal + premOptTotal;
 
             return total;
         }
@@ -1751,6 +1935,32 @@ namespace IPOClient.Repositories.Implementations
                 child.ModifiedDate = DateTime.UtcNow;
             }
 
+            // Recalculate EffectiveRate on all parent orders for this IPO
+            var orders = await _context.BuyerOrders
+                .Include(o => o.BuyerMaster)
+                .Where(o => o.BuyerMaster.IPOId == ipoId &&
+                           o.BuyerMaster.CompanyId == companyId &&
+                           o.BuyerMaster.IsActive &&
+                           !o.IsDeleted &&
+                           !o.BuyerMaster.IsDeleted)
+                .ToListAsync();
+
+            foreach (var order in orders)
+            {
+                // Only recalculate if EffectiveRate not already set (new orders store it at creation)
+                if (order.EffectiveRate == null)
+                {
+                    bool isPremOrOpt = order.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                       order.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                       order.OrderCategory == (int)IPOOrderCategory.PUT;
+                    if (isPremOrOpt && preOpenPrice > 0)
+                    {
+                        order.EffectiveRate = order.Rate;  // Rate IS the entered value
+                        order.ModifiedDate = DateTime.UtcNow;
+                    }
+                }
+            }
+
             await _context.SaveChangesAsync();
             return children.Count;
         }
@@ -1777,8 +1987,71 @@ namespace IPOClient.Repositories.Implementations
                 child.ModifiedDate = DateTime.UtcNow;
             }
 
+            // Also populate EffectiveRate on orders that don't have it yet
+            var ordersWithoutER = await _context.BuyerOrders
+                .Include(o => o.BuyerMaster)
+                .Where(o => o.BuyerMaster.IPOId == ipoId &&
+                           o.BuyerMaster.CompanyId == companyId &&
+                           o.BuyerMaster.IsActive &&
+                           !o.IsDeleted &&
+                           !o.BuyerMaster.IsDeleted &&
+                           o.EffectiveRate == null)
+                .ToListAsync();
+
+            foreach (var order in ordersWithoutER)
+            {
+                if (preOpenPrice > 0)
+                {
+                    bool isPremOrOpt = order.OrderCategory == (int)IPOOrderCategory.Premium ||
+                                       order.OrderCategory == (int)IPOOrderCategory.CALL ||
+                                       order.OrderCategory == (int)IPOOrderCategory.PUT;
+                    // Rate IS the entered value — set EffectiveRate = Rate
+                    order.EffectiveRate = isPremOrOpt ? order.Rate : (decimal?)null;
+                    order.ModifiedDate = DateTime.UtcNow;
+                }
+            }
+
             await _context.SaveChangesAsync();
             return children.Count;
+        }
+
+        public async Task<int> FixAllotedQtyFromLotSizeAsync(int ipoId, int companyId)
+        {
+            var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
+            if (ipoMaster == null) return 0;
+
+            // Get all children with AllotedQty = 0 or null for this IPO
+            var children = await _context.ChildPlaceOrder
+                .Include(c => c.IPOOrder)
+                    .ThenInclude(o => o.BuyerMaster)
+                .Where(c => c.IPOOrder.BuyerMaster.IPOId == ipoId &&
+                           c.IPOOrder.BuyerMaster.CompanyId == companyId &&
+                           c.IPOOrder.BuyerMaster.IsActive &&
+                           !c.IsDeleted &&
+                           !c.IPOOrder.IsDeleted &&
+                           !c.IPOOrder.BuyerMaster.IsDeleted &&
+                           (c.AllotedQty == null || c.AllotedQty == 0))
+                .ToListAsync();
+
+            foreach (var child in children)
+            {
+                int? lotSize = child.IPOOrder.InvestorType switch
+                {
+                    (int)IPOInvestorType.Retail => (int?)(ipoMaster.IPO_Retail_Lot_Size),
+                    (int)IPOInvestorType.SHNI => (int?)(ipoMaster.IPO_SHNI_Lot_Size),
+                    (int)IPOInvestorType.BHNI => (int?)(ipoMaster.IPO_BHNI_Lot_Size),
+                    _ => 1 // Premium/Options - 1 per application
+                };
+
+                if (lotSize.HasValue && lotSize.Value > 0)
+                {
+                    child.AllotedQty = lotSize.Value;
+                    child.ModifiedDate = DateTime.UtcNow;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return children.Count(c => c.AllotedQty > 0);
         }
     }
 }

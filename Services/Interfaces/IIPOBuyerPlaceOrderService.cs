@@ -36,5 +36,6 @@ namespace IPOClient.Services.Interfaces
         Task<ReturnData<FileResponse>> DownloadGroupWiseBillingExcelAsync(GroupWiseBillingRequest request, int companyId, int ipoId);
         Task<ReturnData<FileResponse>> DownloadClientWiseBillingExcelAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
         Task<ReturnData<FileResponse>> DownloadClientWiseBillingPdfAsync(OrderDetailFilterRequest request, int companyId, int ipoId);
+        Task<ReturnData> FixAllotedQtyFromLotSizeAsync(int ipoId, int companyId);
     }
 }

@@ -30,6 +30,7 @@ namespace IPOClient.Models.Responses
         public int Failed { get; set; }
         public int Updated { get; set; }
         public List<AllotmentPanResult> Results { get; set; } = new();
+        public List<string> Errors { get; set; } = new();
     }
 
     public class AllotmentPanResult

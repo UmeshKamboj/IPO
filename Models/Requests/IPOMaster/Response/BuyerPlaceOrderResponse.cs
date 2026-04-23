@@ -32,12 +32,17 @@ namespace IPOClient.Models.Requests.IPOMaster.Response
         public string? InvestorTypeName { get; set; }
         public string? PanNumber { get; set; }
         public string? ClientName { get; set; }
-        public int? AllotedQty { get; set; }
+        public string? AllotedQty { get; set; }
         public string? DematNumber { get; set; }
         public string? ApplicationNumber { get; set; }
         public string? Remark { get; set; }
         public decimal PreOpenPrice { get; set; }
         public decimal Amount { get; set; }
+        /// <summary>
+        /// Effective rate after listing: Rate - (PreOpenPrice - IPOPrice) for Premium/CALL,
+        /// Rate - (IPOPrice - PreOpenPrice) for PUT. Shows per-share net position after listing.
+        /// </summary>
+        public decimal? EffectiveRate { get; set; }
         public bool? ApplicateRate { get; set; }
         public OrderCategoryOptionsResponse? OrderCategoryOptions { get; set; }
 

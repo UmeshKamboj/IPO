@@ -4,6 +4,7 @@ using IPOClient.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IPOClient.Migrations
 {
     [DbContext(typeof(IPOClientDbContext))]
-    partial class IPOClientDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260319164428_ChangePercentageToDecimal")]
+    partial class ChangePercentageToDecimal
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -251,9 +254,6 @@ namespace IPOClient.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("BuyerMasterId");
-
-                    b.HasIndex("IPOId", "CompanyId", "IsActive", "IsDeleted")
-                        .HasDatabaseName("IX_BuyerMaster_IPO_Company_Active");
 
                     b.ToTable("IPO_BuyerPlaceOrderMaster", (string)null);
                 });
@@ -717,16 +717,9 @@ namespace IPOClient.Migrations
 
                     b.HasKey("POChildId");
 
-                    b.HasIndex("ChildOrderCreatedDate")
-                        .IsDescending()
-                        .HasDatabaseName("IX_PlaceOrderChild_CreatedDate");
-
                     b.HasIndex("GroupId");
 
                     b.HasIndex("OrderId");
-
-                    b.HasIndex("CompanyId", "OrderId", "IsDeleted")
-                        .HasDatabaseName("IX_PlaceOrderChild_Company_Order_Deleted");
 
                     b.ToTable("IPO_PlaceOrderChild", (string)null);
                 });

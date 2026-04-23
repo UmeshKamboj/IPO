@@ -63,12 +63,39 @@ namespace IPOClient.Repositories.Implementations
                 var order = child.IPOOrder;
                 var allotedQty = child.AllotedQty ?? 0;
                 var preOpenPrice = child.PreOpenPrice > 0 ? child.PreOpenPrice : ipoPreOpenPrice;
-                var rate = order.Rate;
+                var orderCategory = order.OrderCategory;
+                bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                 orderCategory == (int)IPOOrderCategory.CALL ||
+                                 orderCategory == (int)IPOOrderCategory.PUT;
+                var rate = isPremOpt && order.EffectiveRate.HasValue
+                    ? order.EffectiveRate.Value
+                    : order.Rate;
 
-                // Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
-                // If AllotedQty is 0, Amount should be 0
-                var amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
-                if (allotedQty != 0 && order.OrderType == (int)IPOOrderType.SELL)
+                decimal amount;
+                if (orderCategory == (int)IPOOrderCategory.CALL)
+                {
+                    amount = -rate * allotedQty;
+                }
+                else if (orderCategory == (int)IPOOrderCategory.PUT)
+                {
+                    decimal putSp = 0;
+                    if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                        && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                        putSp = parsedSp;
+                    amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                }
+                else if (isPremOpt)
+                {
+                    amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                }
+                else
+                {
+                    amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
+                }
+
+                // StrikePrice already added to Rate for CALL/PUT
+
+                if (order.OrderType == (int)IPOOrderType.SELL)
                     amount = -amount;
 
                 worksheet.Cell(row, 1).Value = child.Group?.GroupName ?? "-";
@@ -116,11 +143,14 @@ namespace IPOClient.Repositories.Implementations
                             OrderType = ((IPOOrderType)order.OrderType).ToString(),
                             OrderTypeId = order.OrderType,
                             OrderCategory = ((IPOOrderCategory)order.OrderCategory).ToString(),
+                            OrderCategoryId = order.OrderCategory,
                             InvestorType = ((IPOInvestorType)order.InvestorType).ToString(),
                             Quantity = order.Quantity,
                             AllotedQty = c.AllotedQty ?? 0,
                             PreOpenPrice = c.PreOpenPrice,
                             Rate = order.Rate,
+                            EffectiveRate = order.EffectiveRate,
+                            PremiumStrikePrice = order.PremiumStrikePrice,
                             Amount = 0,
                             Date = order.DateTime.ToString("dd-MM-yyyy"),
                             Time = order.DateTime.ToString("HH:mm")

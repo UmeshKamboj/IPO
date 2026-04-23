@@ -45,7 +45,6 @@ namespace IPOClient.Data
                 entity.Property(e => e.Email).HasMaxLength(256).IsRequired();
                 entity.Property(e => e.Password).IsRequired();
                 entity.Property(e => e.Phone).HasMaxLength(20);
-                entity.Property(e => e.IsAdmin).HasDefaultValue(false);
                 entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
                 entity.HasIndex(e => e.Email).IsUnique(); // Email should be unique
             });
@@ -82,7 +81,6 @@ namespace IPOClient.Data
                 entity.HasKey(e => e.IPOGroupId);
                 entity.Property(e => e.GroupName).HasMaxLength(200);
                 entity.Property(e => e.CompanyId).IsRequired();
-                entity.Property(e => e.IsActive).HasDefaultValue(true);
                 entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
                 entity.ToTable("IPO_GroupMaster");
             });
@@ -91,6 +89,10 @@ namespace IPOClient.Data
             {
                 entity.HasKey(e => e.BuyerMasterId);
                 entity.ToTable("IPO_BuyerPlaceOrderMaster");
+
+                // Index for order queries filtering by IPO
+                entity.HasIndex(e => new { e.IPOId, e.CompanyId, e.IsActive, e.IsDeleted })
+                      .HasDatabaseName("IX_BuyerMaster_IPO_Company_Active");
             });
 
             modelBuilder.Entity<IPO_BuyerOrder>(entity =>
@@ -105,6 +107,7 @@ namespace IPOClient.Data
                 // Specify precision and scale for Rate property
                 entity.Property(e => e.Rate)
                       .HasPrecision(18, 4); // 18 total digits, 4 decimal places
+
             });
 
             // Configure IPO_PlaceOrderChild table
@@ -122,6 +125,15 @@ namespace IPOClient.Data
                       .WithMany()
                       .HasForeignKey(c => c.GroupId)
                       .OnDelete(DeleteBehavior.Restrict);
+
+                // Index for order listing queries
+                entity.HasIndex(e => new { e.CompanyId, e.OrderId, e.IsDeleted })
+                      .HasDatabaseName("IX_PlaceOrderChild_Company_Order_Deleted");
+
+                // Index for sorting by creation date (pagination)
+                entity.HasIndex(e => e.ChildOrderCreatedDate)
+                      .HasDatabaseName("IX_PlaceOrderChild_CreatedDate")
+                      .IsDescending();
             });
 
             // Configure IPO_ClientSetup table
@@ -133,7 +145,6 @@ namespace IPOClient.Data
                 entity.Property(e => e.PANNumber).HasMaxLength(10).IsRequired();
                 entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
                 entity.Property(e => e.ClientDPId).HasMaxLength(100);
-                entity.Property(e => e.IsDeleted).HasDefaultValue(false);
                 entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
 
                 entity.HasOne(c => c.Group)
@@ -174,7 +185,6 @@ namespace IPOClient.Data
                 entity.ToTable("IPO_Analysis");
 
                 entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
-                entity.Property(e => e.IsActive).HasDefaultValue(true);
 
                 entity.HasOne(a => a.IPOMaster)
                       .WithMany()
@@ -229,7 +239,6 @@ namespace IPOClient.Data
                 entity.Property(e => e.RegistrarName).HasMaxLength(50).IsRequired();
                 entity.Property(e => e.LastErrorMessage).HasMaxLength(1000);
                 entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
-                entity.Property(e => e.IsActive).HasDefaultValue(true);
 
                 // One row per registrar - enforce uniqueness
                 entity.HasIndex(e => e.RegistrarName).IsUnique();

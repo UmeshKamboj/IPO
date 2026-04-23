@@ -1,4 +1,5 @@
 ﻿using ClosedXML.Excel;
+using IPOClient.Models.Enums;
 using IPOClient.Models.Requests.IPOMaster.Response;
 using IPOClient.Models.Responses;
 using IPOClient.Repositories.Implementations;
@@ -83,10 +84,37 @@ namespace IPOClient.Services.Implementations
                             // Get PreOpenPrice: Use child's PreOpenPrice, fallback to IPO's if child has 0
                             var preOpenPrice = orderRow.PreOpenPrice > 0 ? orderRow.PreOpenPrice : ipoPreOpenPrice;
 
-                            // Formula: Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
-                            // If AllotedQty is 0, Amount should be 0
-                            var amount = orderRow.AllotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * orderRow.AllotedQty - orderRow.Rate;
-                            if (orderRow.AllotedQty != 0 && orderRow.OrderTypeId == 2) // SELL
+                            var orderCategory = orderRow.OrderCategoryId;
+                            bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                             orderCategory == (int)IPOOrderCategory.CALL ||
+                                             orderCategory == (int)IPOOrderCategory.PUT;
+                            var rate = isPremOpt && orderRow.EffectiveRate.HasValue
+                                ? orderRow.EffectiveRate.Value
+                                : orderRow.Rate;
+
+                            decimal amount;
+                            if (orderCategory == (int)IPOOrderCategory.CALL)
+                            {
+                                amount = -rate * orderRow.AllotedQty;
+                            }
+                            else if (orderCategory == (int)IPOOrderCategory.PUT)
+                            {
+                                decimal putSp = 0;
+                                if (!string.IsNullOrEmpty(orderRow.PremiumStrikePrice)
+                                    && decimal.TryParse(orderRow.PremiumStrikePrice, out var parsedSp))
+                                    putSp = parsedSp;
+                                amount = (ipoPrice - preOpenPrice - rate + putSp) * orderRow.AllotedQty;
+                            }
+                            else if (isPremOpt) // Premium
+                            {
+                                amount = (preOpenPrice - ipoPrice - rate) * orderRow.AllotedQty;
+                            }
+                            else // Kostak / SubjectTo
+                            {
+                                amount = orderRow.AllotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * orderRow.AllotedQty - orderRow.Rate;
+                            }
+
+                            if (orderRow.OrderTypeId == 2) // SELL
                                 amount = -amount;
 
                             worksheet.Cell(row, 1).Value = orderRow.GroupName;

@@ -36,8 +36,9 @@ namespace IPOClient.Services.Implementations
                 if (ipoMaster == null)
                     return ReturnData<IPOAnalysisResponse>.ErrorResponse("IPO not found", 404);
 
-                // Get order count data (same as OrderStatusSummary)
-                var orderSummary = await _analysisRepository.GetOrderStatusSummaryAsync(request.IPOId, companyId);
+                // Get order count data — for Tab 3 (After Listing), use user-entered spotPrice as PreOpenPrice
+                var orderSummary = await _analysisRepository.GetOrderStatusSummaryAsync(request.IPOId, companyId,
+                    request.AnalysisType == 3 ? request.SpotPrice : null);
 
                 // Get share qty data
                 ShareQtyData shareQtyData;
@@ -116,6 +117,32 @@ namespace IPOClient.Services.Implementations
                 // Build subscription data
                 BuildSubscriptions(response, ipoMaster, request, orderSummary);
 
+                // Tab 1: multiply Kostak/SubjectTo share qty by AvgSharePerApplication
+                if (request.AnalysisType == 1)
+                {
+                    foreach (var t in InvestorTypes)
+                    {
+                        var key = t.ToString();
+                        var avgSharePerApp = response.Subscriptions.ContainsKey(key)
+                            ? response.Subscriptions[key].AvgSharePerApplication : 0;
+
+                        if (response.KostakShareQty.ContainsKey(key))
+                        {
+                            var block = response.KostakShareQty[key];
+                            block.Buy.Count = (int)Math.Round(response.KostakCount[key].Buy.Count * avgSharePerApp);
+                            block.Sell.Count = (int)Math.Round(response.KostakCount[key].Sell.Count * avgSharePerApp);
+                            block.Net.Count = block.Buy.Count - block.Sell.Count;
+                        }
+                        if (response.SubjectToShareQty.ContainsKey(key))
+                        {
+                            var block = response.SubjectToShareQty[key];
+                            block.Buy.Count = (int)Math.Round(response.SubjectToCount[key].Buy.Count * avgSharePerApp);
+                            block.Sell.Count = (int)Math.Round(response.SubjectToCount[key].Sell.Count * avgSharePerApp);
+                            block.Net.Count = block.Buy.Count - block.Sell.Count;
+                        }
+                    }
+                }
+
                 // Build rates
                 BuildRates(response, orderSummary, request);
 
@@ -133,9 +160,7 @@ namespace IPOClient.Services.Implementations
                         response.ProfitOrLoss = CalculateProfitOrLoss(response, spotPrice.Value, ipoMaster.IPO_Upper_Price_Band);
                     }
 
-                    // Rates not applicable for After Listing
-                    response.KostakRates = new Dictionary<string, RateBlock>();
-                    response.SubjectToRates = new Dictionary<string, RateBlock>();
+                    // Rates already initialized to 0 by BuildRates for Tab 3
                 }
 
                 return ReturnData<IPOAnalysisResponse>.SuccessResponse(response, "Analysis calculated successfully", 200);
@@ -156,7 +181,8 @@ namespace IPOClient.Services.Implementations
 
                 var resultJson = JsonSerializer.Serialize(calcResult.Data);
 
-                // Save with original request values — null fields won't overwrite existing DB values
+                // Save with original request values — null/0 fields won't overwrite existing DB values
+                // Treat 0 as null for shared fields so tabs don't clear each other
                 var analysis = new IPO_Analysis
                 {
                     IPOId = request.IPOId,
@@ -168,9 +194,9 @@ namespace IPOClient.Services.Implementations
                     ActualAllottedQty_Retail = request.ActualAllottedQty_Retail,
                     ActualAllottedQty_SHNI = request.ActualAllottedQty_SHNI,
                     ActualAllottedQty_BHNI = request.ActualAllottedQty_BHNI,
-                    ProfitMargin = request.ProfitMargin,
-                    SpotPremium = request.SpotPremium,
-                    SpotPrice = request.SpotPrice,
+                    ProfitMargin = (request.AnalysisType == 1 || request.AnalysisType == 2) ? request.ProfitMargin : null,
+                    SpotPremium = (request.AnalysisType == 1 || request.AnalysisType == 2) ? request.SpotPremium : null,
+                    SpotPrice = request.AnalysisType == 3 ? request.SpotPrice : null,
                     CalculatedResultJson = resultJson,
                     CompanyId = companyId,
                     CreatedBy = userId,
@@ -179,9 +205,13 @@ namespace IPOClient.Services.Implementations
 
                 await _analysisRepository.UpsertAnalysisAsync(analysis);
 
-                // Sync only explicitly sent shared fields (null = not sent, won't overwrite)
+                // Sync only fields that belong to the current tab (use AnalysisType to determine)
+                // Tab 1 & 2 have ProfitMargin, SpotPremium; Tab 3 has SpotPrice
+                var profitMarginToSync = (request.AnalysisType == 1 || request.AnalysisType == 2) ? request.ProfitMargin : null;
+                var spotPremiumToSync = (request.AnalysisType == 1 || request.AnalysisType == 2) ? request.SpotPremium : null;
+                var spotPriceToSync = request.AnalysisType == 3 ? request.SpotPrice : null;
                 await _analysisRepository.UpdateSharedFieldsAsync(
-                    request.IPOId, companyId, request.ProfitMargin, request.SpotPremium, request.SpotPrice);
+                    request.IPOId, companyId, profitMarginToSync, spotPremiumToSync, spotPriceToSync);
 
                 // When SpotPrice is explicitly sent, update IPO Master and all child order PreOpenPrices
                 if (request.SpotPrice.HasValue && request.SpotPrice.Value > 0)
@@ -320,14 +350,22 @@ namespace IPOClient.Services.Implementations
                 }
                 else if (row.OrderCategory == (int)IPOOrderCategory.Premium)
                 {
+                    // Only Premium orders in share qty (CALL/PUT excluded, matching old app)
                     var target = isBuy ? response.PremiumShareQty.Buy : response.PremiumShareQty.Sell;
                     target.Count += row.TotalQty;
                 }
             }
 
-            // For Tab 2/3: multiply share qty by actual allotted qty per investor type
+            // For Tab 2/3: Kostak/SubjectTo already have correct AllotedQty sums from GetAllotedShareQtyDataAsync
+            // Only Premium needs override (AllotedQty=1 per child, so use order count directly)
             if (request.AnalysisType >= 2)
             {
+                response.PremiumShareQty.Buy.Count = response.PremiumCount.Buy.Count;
+                response.PremiumShareQty.Sell.Count = response.PremiumCount.Sell.Count;
+            }
+            else
+            {
+                // Tab 1 (Initial P&L): multiply count by lot-based allotment estimate
                 var allotmentMap = new Dictionary<IPOInvestorType, decimal>
                 {
                     [IPOInvestorType.Retail] = request.ActualAllottedQty_Retail ?? 0,
@@ -353,10 +391,6 @@ namespace IPOClient.Services.Implementations
                         block.Sell.Count = (int)(response.SubjectToCount[key].Sell.Count * allotment);
                     }
                 }
-
-                var totalAllotment = request.ActualAllottedQty_Total ?? 0;
-                response.PremiumShareQty.Buy.Count = (int)(response.PremiumCount.Buy.Count * totalAllotment);
-                response.PremiumShareQty.Sell.Count = (int)(response.PremiumCount.Sell.Count * totalAllotment);
             }
 
             // NET calculation for share qty
@@ -385,20 +419,18 @@ namespace IPOClient.Services.Implementations
 
             var types = new[]
             {
-                (IPOInvestorType.Retail, (decimal)ipo.Retail_Percentage, request.ExpectedApplications_Retail, request.ActualAllottedQty_Retail),
-                (IPOInvestorType.SHNI, (decimal)(ipo.SHNI_Percentage ?? 0), request.ExpectedApplications_SHNI, request.ActualAllottedQty_SHNI),
-                (IPOInvestorType.BHNI, (decimal)(ipo.BHNI_Percentage ?? 0), request.ExpectedApplications_BHNI, request.ActualAllottedQty_BHNI)
+                (IPOInvestorType.Retail, (decimal)ipo.Retail_Percentage, request.ExpectedApplications_Retail, request.ActualAllottedQty_Retail, ipo.IPO_Retail_Lot_Size),
+                (IPOInvestorType.SHNI, (decimal)(ipo.SHNI_Percentage ?? 0), request.ExpectedApplications_SHNI, request.ActualAllottedQty_SHNI, ipo.IPO_SHNI_Lot_Size ?? 0),
+                (IPOInvestorType.BHNI, (decimal)(ipo.BHNI_Percentage ?? 0), request.ExpectedApplications_BHNI, request.ActualAllottedQty_BHNI, ipo.IPO_BHNI_Lot_Size ?? 0)
             };
 
-            foreach (var (investorType, percentage, expectedApps, actualAllotment) in types)
+            foreach (var (investorType, percentage, expectedApps, actualAllotment, lotSize) in types)
             {
                 var typeName = investorType.ToString();
                 var sharesForType = totalShares * percentage / 100m;
 
-                // ApplicationForOneTime = total BUY count across Kostak+SubjectTo for this investor type
-                var kostakBuyCount = orderSummary.Kostak.ContainsKey(typeName) ? orderSummary.Kostak[typeName].Buy.Count : 0;
-                var subjectToBuyCount = orderSummary.SubjectTo.ContainsKey(typeName) ? orderSummary.SubjectTo[typeName].Buy.Count : 0;
-                var appForOneTime = kostakBuyCount + subjectToBuyCount;
+                // ApplicationForOneTime = total shares for this investor type / lot size
+                var appForOneTime = lotSize > 0 ? (int)Math.Round(sharesForType / lotSize) : 0;
 
                 var sub = new SubscriptionBlock
                 {
@@ -427,33 +459,15 @@ namespace IPOClient.Services.Implementations
 
         private void BuildRates(IPOAnalysisResponse response, OrderStatusSummaryResponse orderSummary, IPOAnalysisRequest request)
         {
-            if (request.AnalysisType == 3)
-                return; // No rates for After Listing
-
-            // Use resolved profitMargin from response (shared across all tabs)
             var profitMargin = response.ProfitMargin;
 
             foreach (var t in InvestorTypes)
             {
                 var key = t.ToString();
 
-                // Kostak rates
-                var kostakAvg = orderSummary.Kostak.ContainsKey(key)
-                    ? orderSummary.Kostak[key].Net.Avg : 0;
-                response.KostakRates[key] = new RateBlock
-                {
-                    WithoutProfitMargin = Math.Round(kostakAvg, 2),
-                    WithProfitMargin = Math.Round(kostakAvg * (1 + profitMargin / 100m), 2)
-                };
-
-                // SubjectTo rates
-                var subjectAvg = orderSummary.SubjectTo.ContainsKey(key)
-                    ? orderSummary.SubjectTo[key].Net.Avg : 0;
-                response.SubjectToRates[key] = new RateBlock
-                {
-                    WithoutProfitMargin = Math.Round(subjectAvg, 2),
-                    WithProfitMargin = Math.Round(subjectAvg * (1 + profitMargin / 100m), 2)
-                };
+                // Kostak/Subject rates = 0 for all tabs (matching old app behavior)
+                response.KostakRates[key] = new RateBlock { WithoutProfitMargin = 0, WithProfitMargin = 0 };
+                response.SubjectToRates[key] = new RateBlock { WithoutProfitMargin = 0, WithProfitMargin = 0 };
             }
         }
 
@@ -470,8 +484,9 @@ namespace IPOClient.Services.Implementations
 
         private decimal CalculateProfitOrLoss(IPOAnalysisResponse response, decimal spotPrice, decimal ipoPrice)
         {
-            // Tab 3 uses DifferenceQty (without profit margin context)
-            var sharePnL = (response.DifferenceQty ?? response.DifferenceQtyToHedge) * (spotPrice - ipoPrice);
+            // P&L = sum of all billing amounts (Premium, CALL rate-only, PUT, Kostak)
+            // No separate sharePnL — it's already embedded in Premium/PUT billing formulas
+            // CALL uses rate-only so sharePnL is not double-counted
 
             decimal netKostakAmount = 0;
             foreach (var kvp in response.KostakCount)
@@ -483,7 +498,7 @@ namespace IPOClient.Services.Implementations
 
             var netPremiumAmount = response.PremiumCount.Net.Amount;
 
-            return Math.Round(sharePnL + netKostakAmount + netSubjectToAmount + netPremiumAmount, 2);
+            return Math.Round(netKostakAmount + netSubjectToAmount + netPremiumAmount, 2);
         }
 
         #endregion

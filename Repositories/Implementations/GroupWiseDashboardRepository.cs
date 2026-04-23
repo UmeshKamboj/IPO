@@ -181,9 +181,8 @@ namespace IPOClient.Repositories.Implementations
 
         public async Task<List<GroupIpoBillingRow>> GetOrderBillingByGroupAsync(List<int> groupIds, int companyId)
         {
-            // Sum order amounts (Quantity × Rate) grouped by Group and IPO
-            // GroupId lives on IPO_PlaceOrderChild, so query through children
-            var rows = await _context.ChildPlaceOrder
+            // Fetch all child orders for the given groups
+            var children = await _context.ChildPlaceOrder
                 .Include(c => c.IPOOrder).ThenInclude(o => o.BuyerMaster)
                 .Where(c =>
                     c.IPOOrder.BuyerMaster.CompanyId == companyId &&
@@ -192,17 +191,74 @@ namespace IPOClient.Repositories.Implementations
                     !c.IPOOrder.BuyerMaster.IsDeleted &&
                     !c.IPOOrder.IsDeleted &&
                     !c.IsDeleted)
-                .GroupBy(c => new { c.GroupId, c.IPOOrder.BuyerMaster.IPOId })
-                .Select(g => new GroupIpoBillingRow
-                {
-                    GroupId = g.Key.GroupId,
-                    IpoId = g.Key.IPOId,
-                    BillingTotal = g.Sum(c =>
-                        c.IPOOrder.OrderType == (int)IPOOrderType.BUY
-                            ? c.IPOOrder.Quantity * c.IPOOrder.Rate
-                            : -(c.IPOOrder.Quantity * c.IPOOrder.Rate))
-                })
                 .ToListAsync();
+
+            // Fetch IPO master data for pricing
+            var ipoIds = children.Select(c => c.IPOOrder.BuyerMaster.IPOId).Distinct().ToList();
+            var ipoMasters = await _context.IPO_IPOMaster
+                .Where(i => ipoIds.Contains(i.Id) && i.CompanyId == companyId)
+                .ToDictionaryAsync(i => i.Id);
+
+            // Calculate billing using correct formula per OrderCategory
+            var rows = children
+                .GroupBy(c => new { c.GroupId, c.IPOOrder.BuyerMaster.IPOId })
+                .Select(g =>
+                {
+                    var ipoMaster = ipoMasters.GetValueOrDefault(g.Key.IPOId);
+                    var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
+                    var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+
+                    var billingTotal = g.Sum(c =>
+                    {
+                        var order = c.IPOOrder;
+                        var allotedQty = c.AllotedQty ?? 0;
+                        var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
+                        var orderCategory = order.OrderCategory;
+                        bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
+                                         orderCategory == (int)IPOOrderCategory.CALL ||
+                                         orderCategory == (int)IPOOrderCategory.PUT;
+                        var rate = isPremOpt && order.EffectiveRate.HasValue
+                            ? order.EffectiveRate.Value
+                            : order.Rate;
+
+                        decimal amount;
+                        if (orderCategory == (int)IPOOrderCategory.CALL)
+                        {
+                            amount = -rate * allotedQty;
+                        }
+                        else if (orderCategory == (int)IPOOrderCategory.PUT)
+                        {
+                            decimal putSp = 0;
+                            if (!string.IsNullOrEmpty(c.IPOOrder.PremiumStrikePrice)
+                                && decimal.TryParse(c.IPOOrder.PremiumStrikePrice, out var parsedSp))
+                                putSp = parsedSp;
+                            amount = (ipoPrice - preOpenPrice - rate + putSp) * allotedQty;
+                        }
+                        else if (isPremOpt)
+                        {
+                            amount = (preOpenPrice - ipoPrice - rate) * allotedQty;
+                        }
+                        else
+                        {
+                            amount = allotedQty == 0 ? 0 : (preOpenPrice - ipoPrice) * allotedQty - rate;
+                        }
+
+                        // StrikePrice already added to Rate for CALL/PUT
+
+                        if (order.OrderType == (int)IPOOrderType.SELL)
+                            amount = -amount;
+
+                        return amount;
+                    });
+
+                    return new GroupIpoBillingRow
+                    {
+                        GroupId = g.Key.GroupId,
+                        IpoId = g.Key.IPOId,
+                        BillingTotal = billingTotal
+                    };
+                })
+                .ToList();
 
             return rows;
         }

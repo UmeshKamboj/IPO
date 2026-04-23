@@ -21,9 +21,12 @@ namespace IPOClient.Models.Entities
         public decimal? IPO_SHNI_Lot_Size { get; set; }
         [Column(TypeName = "decimal(18, 4)")]
         public decimal? IPO_BHNI_Lot_Size { get; set; } 
-        public int Retail_Percentage { get; set; }
-        public int? BHNI_Percentage { get; set; }  
-        public int? SHNI_Percentage { get; set; }
+        [Column(TypeName = "decimal(18, 2)")]
+        public decimal Retail_Percentage { get; set; }
+        [Column(TypeName = "decimal(18, 2)")]
+        public decimal? BHNI_Percentage { get; set; }
+        [Column(TypeName = "decimal(18, 2)")]
+        public decimal? SHNI_Percentage { get; set; }
         public string? Remark { get; set; } 
         // Audit Fields 
         public int? CreatedBy { get; set; }

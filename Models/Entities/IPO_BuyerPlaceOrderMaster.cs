@@ -36,6 +36,17 @@ namespace IPOClient.Models.Entities
         public bool ApplicateRate { get; set; } = false; // If true: Premium, If false: Application
         public int Quantity { get; set; }
         public decimal Rate { get; set; }
+
+        /// <summary>
+        /// Effective rate after listing. Calculated as:
+        /// Premium/CALL: Rate - (PreOpenPrice - IPOPrice)
+        /// PUT: Rate - (IPOPrice - PreOpenPrice)
+        /// Kostak/SubjectTo: null
+        /// Updated when PreOpenPrice changes.
+        /// </summary>
+        [Column(TypeName = "decimal(18, 4)")]
+        public decimal? EffectiveRate { get; set; }
+
         public DateTime DateTime { get; set; } = DateTime.UtcNow;
         // Audit Fields 
         public int? CreatedBy { get; set; }

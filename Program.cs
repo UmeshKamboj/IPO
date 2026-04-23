@@ -75,7 +75,10 @@ builder.Services.AddHttpContextAccessor();
 // =======================
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<IPOClientDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        sqlOptions.CommandTimeout(120); // 120 seconds for complex order queries
+    }));
 
 // =======================
 // Repositories & Services

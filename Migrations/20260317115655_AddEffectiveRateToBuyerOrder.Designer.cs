@@ -4,6 +4,7 @@ using IPOClient.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace IPOClient.Migrations
 {
     [DbContext(typeof(IPOClientDbContext))]
-    partial class IPOClientDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260317115655_AddEffectiveRateToBuyerOrder")]
+    partial class AddEffectiveRateToBuyerOrder
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -251,9 +254,6 @@ namespace IPOClient.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("BuyerMasterId");
-
-                    b.HasIndex("IPOId", "CompanyId", "IsActive", "IsDeleted")
-                        .HasDatabaseName("IX_BuyerMaster_IPO_Company_Active");
 
                     b.ToTable("IPO_BuyerPlaceOrderMaster", (string)null);
                 });
@@ -516,8 +516,8 @@ namespace IPOClient.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<decimal?>("BHNI_Percentage")
-                        .HasColumnType("decimal(18, 2)");
+                    b.Property<int?>("BHNI_Percentage")
+                        .HasColumnType("int");
 
                     b.Property<int?>("CompanyId")
                         .HasColumnType("int");
@@ -561,11 +561,11 @@ namespace IPOClient.Migrations
                     b.Property<string>("Remark")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<decimal>("Retail_Percentage")
-                        .HasColumnType("decimal(18, 2)");
+                    b.Property<int>("Retail_Percentage")
+                        .HasColumnType("int");
 
-                    b.Property<decimal?>("SHNI_Percentage")
-                        .HasColumnType("decimal(18, 2)");
+                    b.Property<int?>("SHNI_Percentage")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("Total_IPO_Size_Cr")
                         .HasColumnType("decimal(18, 4)");
@@ -717,16 +717,9 @@ namespace IPOClient.Migrations
 
                     b.HasKey("POChildId");
 
-                    b.HasIndex("ChildOrderCreatedDate")
-                        .IsDescending()
-                        .HasDatabaseName("IX_PlaceOrderChild_CreatedDate");
-
                     b.HasIndex("GroupId");
 
                     b.HasIndex("OrderId");
-
-                    b.HasIndex("CompanyId", "OrderId", "IsDeleted")
-                        .HasDatabaseName("IX_PlaceOrderChild_Company_Order_Deleted");
 
                     b.ToTable("IPO_PlaceOrderChild", (string)null);
                 });

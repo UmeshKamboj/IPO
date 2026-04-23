@@ -29,6 +29,7 @@ namespace IPOClient.Models.Requests
         /// Investor type filter: 0 or null = All, 1 = Retail, 2 = SHNI, 3 = BHNI
         /// Filters Kostak + SubjectTo orders for the selected investor type
         /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("investorTypeId")]
         public int? InvestorType { get; set; }
         public int AllotedQty { get; set; }
     }

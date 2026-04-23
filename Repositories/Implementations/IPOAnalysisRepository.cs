@@ -22,14 +22,14 @@ namespace IPOClient.Repositories.Implementations
                 .FirstOrDefaultAsync(x => x.Id == ipoId && x.CompanyId == companyId && x.IsActive);
         }
 
-        public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(int ipoId, int companyId)
+        public async Task<OrderStatusSummaryResponse> GetOrderStatusSummaryAsync(int ipoId, int companyId, decimal? overridePreOpenPrice = null)
         {
             var response = new OrderStatusSummaryResponse();
 
             // Get IPO Master data for pricing
             var ipoMaster = await _context.IPO_IPOMaster.FirstOrDefaultAsync(i => i.Id == ipoId && i.CompanyId == companyId);
             var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
-            var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+            var ipoPreOpenPrice = overridePreOpenPrice ?? ipoMaster?.OpenIPOPrice ?? 0;
 
             // Get child orders with all required data
             var childOrders = await _context.ChildPlaceOrder
@@ -43,7 +43,10 @@ namespace IPOClient.Repositories.Implementations
 
             // Group and calculate using new formula: (PreOpenPrice - IPOPrice) × AllotedQty - Rate
             // If AllotedQty is 0, Amount should be 0
-            var grouped = childOrders
+            // Kostak/SubjectTo: per-child calculation
+            var kostakSubjectRows = childOrders
+                .Where(c => c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
+                             c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo)
                 .GroupBy(c => new { c.IPOOrder.OrderCategory, c.IPOOrder.InvestorType, c.IPOOrder.OrderType })
                 .Select(g =>
                 {
@@ -51,23 +54,67 @@ namespace IPOClient.Repositories.Implementations
                     var totalAmount = g.Sum(c =>
                     {
                         var allotedQty = c.AllotedQty ?? 0;
-                        if (allotedQty == 0) return 0m;
                         var preOpenPrice = c.PreOpenPrice > 0 ? c.PreOpenPrice : ipoPreOpenPrice;
-                        return (preOpenPrice - ipoPrice) * allotedQty - c.IPOOrder.Rate;
+                        // If allotment was checked (PAN filled) but got 0 shares, amount = 0
+                        // If no allotment check done (no PAN), still charge the rate: amount = -rate
+                        decimal amount = (allotedQty == 0 && !string.IsNullOrEmpty(c.PANNumber))
+                            ? 0
+                            : (preOpenPrice - ipoPrice) * allotedQty - c.IPOOrder.Rate;
+                        if (c.IPOOrder.OrderType == (int)IPOOrderType.SELL)
+                            amount = -amount;
+                        return amount;
                     });
-                    var avgRate = count > 0 ? totalAmount / count : 0;
+                    return new { g.Key.OrderCategory, g.Key.InvestorType, g.Key.OrderType, Count = count, Avg = count > 0 ? totalAmount / count : 0, Amount = totalAmount };
+                }).ToList();
 
-                    return new
+            // Premium/CALL/PUT: per-order calculation using Order.Quantity
+            var premOptRows = childOrders
+                .Where(c => c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Premium ||
+                             c.IPOOrder.OrderCategory == (int)IPOOrderCategory.CALL ||
+                             c.IPOOrder.OrderCategory == (int)IPOOrderCategory.PUT)
+                .GroupBy(c => c.OrderId)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    var order = first.IPOOrder;
+                    var qty = order.Quantity;
+                    // Always use the override/current PreOpenPrice for Analysis calculations
+                    var preOpenPrice = ipoPreOpenPrice;
+                    var orderCategory = order.OrderCategory;
+                    // Use EffectiveRate (= what user entered) for Premium/CALL/PUT
+                    var rate = order.EffectiveRate ?? order.Rate;
+
+                    decimal amount;
+                    if (orderCategory == (int)IPOOrderCategory.CALL)
+                        amount = -rate * qty;
+                    else if (orderCategory == (int)IPOOrderCategory.PUT)
                     {
-                        g.Key.OrderCategory,
-                        g.Key.InvestorType,
-                        g.Key.OrderType,
-                        Count = count,
-                        Avg = avgRate,
-                        Amount = totalAmount
-                    };
+                        decimal putSp = 0;
+                        if (!string.IsNullOrEmpty(order.PremiumStrikePrice)
+                            && decimal.TryParse(order.PremiumStrikePrice, out var parsedSp))
+                            putSp = parsedSp;
+                        amount = (ipoPrice - preOpenPrice - rate + putSp) * qty;
+                    }
+                    else // Premium
+                        amount = (preOpenPrice - ipoPrice - rate) * qty;
+
+                    if (order.OrderType == (int)IPOOrderType.SELL)
+                        amount = -amount;
+
+                    return new { orderCategory, order.InvestorType, order.OrderType, Qty = qty, Amount = amount };
                 })
-                .ToList();
+                .GroupBy(x => new { x.orderCategory, x.InvestorType, x.OrderType })
+                .Select(g => new
+                {
+                    OrderCategory = g.Key.orderCategory,
+                    g.Key.InvestorType,
+                    g.Key.OrderType,
+                    Count = g.Sum(x => x.Qty),
+                    Avg = g.Sum(x => x.Qty) == 0 ? 0 : g.Sum(x => x.Amount) / g.Sum(x => x.Qty),
+                    Amount = g.Sum(x => x.Amount)
+                }).ToList();
+
+            var grouped = kostakSubjectRows.Concat(premOptRows).ToList();
 
             // Pre-initialize
             var investorTypes = new[] { IPOInvestorType.Retail, IPOInvestorType.SHNI, IPOInvestorType.BHNI };
@@ -104,24 +151,31 @@ namespace IPOClient.Repositories.Implementations
                 foreach (var item in dict.Values)
                 {
                     item.Net.Count = item.Buy.Count - item.Sell.Count;
-                    item.Net.Amount = item.Buy.Amount - item.Sell.Amount;
+                    // SELL amounts are already negated in the billing loop, so ADD (not subtract)
+                    item.Net.Amount = item.Buy.Amount + item.Sell.Amount;
                     item.Net.Avg = item.Net.Count == 0 ? 0 : item.Net.Amount / item.Net.Count;
                 }
             }
             CalcNet(response.Kostak);
             CalcNet(response.SubjectTo);
 
-            // Premium
-            foreach (var row in grouped.Where(x => x.OrderCategory == (int)IPOOrderCategory.Premium))
+            // Premium: count only Premium orders, but include CALL/PUT amounts in P&L
+            foreach (var row in grouped.Where(x =>
+                x.OrderCategory == (int)IPOOrderCategory.Premium ||
+                x.OrderCategory == (int)IPOOrderCategory.CALL ||
+                x.OrderCategory == (int)IPOOrderCategory.PUT))
             {
                 var target = row.OrderType == (int)IPOOrderType.BUY
                     ? response.Premium.Buy : response.Premium.Sell;
-                target.Count += row.Count;
+                // Only add count for Premium orders, not CALL/PUT
+                if (row.OrderCategory == (int)IPOOrderCategory.Premium)
+                    target.Count += row.Count;
                 target.Amount += row.Amount;
                 target.Avg = target.Count == 0 ? 0 : target.Amount / target.Count;
             }
             response.Premium.Net.Count = response.Premium.Buy.Count - response.Premium.Sell.Count;
-            response.Premium.Net.Amount = response.Premium.Buy.Amount - response.Premium.Sell.Amount;
+            // SELL amounts are already negated in the billing loop, so ADD (not subtract)
+            response.Premium.Net.Amount = response.Premium.Buy.Amount + response.Premium.Sell.Amount;
             response.Premium.Net.Avg = response.Premium.Net.Count == 0 ? 0
                 : response.Premium.Net.Amount / response.Premium.Net.Count;
 

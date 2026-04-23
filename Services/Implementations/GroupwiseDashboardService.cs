@@ -206,6 +206,7 @@ namespace IPOClient.Services.Implementations
                         Due = billing - g.Sum(x => x.Credit)
                     };
                 })
+                .OrderBy(x => x.IpoName)
                 .ToList();
         }
 

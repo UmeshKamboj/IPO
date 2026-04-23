@@ -411,6 +411,18 @@ namespace IPOClient.Controllers
         //    var statusCode = result.ResponseCode == 200 ? 200 : 400;
         //    return StatusCode(statusCode, result);
         //}
+        /// <summary>
+        /// Fix AllotedQty for existing orders based on IPO lot size settings
+        /// </summary>
+        [HttpPost("{ipoId}/fix-allotedqty")]
+        public async Task<IActionResult> FixAllotedQty(int ipoId)
+        {
+            var companyId = GetCompanyId();
+            var result = await _ipoBuyerPlaceOrderService.FixAllotedQtyFromLotSizeAsync(ipoId, companyId);
+            var statusCode = result.ResponseCode == 200 ? 200 : 400;
+            return StatusCode(statusCode, result);
+        }
+
         // Helpers to get claims
         private int GetCurrentUserId()
         {
