@@ -9,3 +9,7 @@
 /publish
 /Properties
 /nul
+
+# Sensitive config - use dummy values only
+appsettings.Production.json
+appsettings.Development.json
