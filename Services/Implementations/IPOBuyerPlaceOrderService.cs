@@ -863,9 +863,8 @@ namespace IPOClient.Services.Implementations
                         // Get AllotedQty (use 0 if null)
                         var allotedQty = row.AllotedQty ?? 0;
 
-                        // Always use the IPO master's current PreOpenPrice for consistent billing.
-                        // Child-level PreOpenPrice snapshots may be stale and cause group billing discrepancies.
-                        var preOpenPrice = ipoPreOpenPrice;
+                        // Get PreOpenPrice: Use child's PreOpenPrice, fallback to IPO's if child has 0
+                        var preOpenPrice = row.PreOpenPrice > 0 ? row.PreOpenPrice : ipoPreOpenPrice;
 
                         var orderCategory = order.OrderCategory;
                         bool isPremOpt = orderCategory == (int)IPOOrderCategory.Premium ||
