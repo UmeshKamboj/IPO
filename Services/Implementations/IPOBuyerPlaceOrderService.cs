@@ -836,6 +836,9 @@ namespace IPOClient.Services.Implementations
                 var ipoMaster = await _ipoRepository.GetByIdAsync(ipoId, companyId);
                 var ipoPrice = ipoMaster?.IPO_Upper_Price_Band ?? 0;
                 var ipoPreOpenPrice = ipoMaster?.OpenIPOPrice ?? 0;
+                var retailLotSize = (int)(ipoMaster?.IPO_Retail_Lot_Size > 0 ? ipoMaster!.IPO_Retail_Lot_Size : 1);
+                var shniLotSize   = (int)(ipoMaster?.IPO_SHNI_Lot_Size  > 0 ? ipoMaster!.IPO_SHNI_Lot_Size  : 1);
+                var bhniLotSize   = (int)(ipoMaster?.IPO_BHNI_Lot_Size  > 0 ? ipoMaster!.IPO_BHNI_Lot_Size  : 1);
 
                 var data = await _buyerPlaceOrderRepository.GetGroupWiseBillingListAsync(request, companyId, ipoId);
                 var groupedResult = new List<GroupWiseBillingResponse>();
@@ -903,8 +906,18 @@ namespace IPOClient.Services.Implementations
                         // Count = number of child rows (+1 for BUY, -1 for SELL)
                         var countDelta = order.OrderType == (int)IPOOrderType.BUY ? 1 : -1;
 
-                        // Alloted = sum of AllotedQty (positive for BUY, negative for SELL)
-                        var allotedDelta = order.OrderType == (int)IPOOrderType.BUY ? allotedQty : -allotedQty;
+                        // Alloted display = lots (divide shares by lot size per investor type)
+                        var lotSize = order.InvestorType switch
+                        {
+                            (int)IPOInvestorType.Retail => retailLotSize,
+                            (int)IPOInvestorType.SHNI   => shniLotSize,
+                            (int)IPOInvestorType.BHNI   => bhniLotSize,
+                            _ => 1
+                        };
+                        var allotedLots = lotSize > 1 && allotedQty % lotSize == 0
+                            ? allotedQty / lotSize
+                            : allotedQty;
+                        var allotedDelta = order.OrderType == (int)IPOOrderType.BUY ? allotedLots : -allotedLots;
 
                         // ===== KOSTAK
                         if (order.OrderCategory == (int)IPOOrderCategory.Kostak)
