@@ -190,7 +190,7 @@ namespace IPOClient.Repositories.Implementations
                  || (o.OrderChild.Any(c => c.Group != null && c.Group.GroupName.Contains(search)))
              );
             }
-            // Filter by GroupId through child table
+            // GroupId: null / 0 / -1 = all groups; any positive value = filter to that group
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
                 query = query.Where(o => o.OrderChild.Any(c => c.GroupId == request.GroupId.Value));
             if (request.OrderCategoryId.HasValue && request.OrderCategoryId.Value > 0)
@@ -199,10 +199,10 @@ namespace IPOClient.Repositories.Implementations
                 query = query.Where(o => o.InvestorType == request.InvestorTypeId.Value);
             query = query.OrderByDescending(o => o.BuyerMaster.CreatedDate);
 
-            // Total count before pagination
+            // Single count query — reuse same IQueryable
             var totalCount = await query.CountAsync();
-            var totalApplications = await query.CountAsync();
-            var pendingPanApplications = await query.CountAsync(o =>o.OrderChild.Any(c => string.IsNullOrEmpty(c.PANNumber)));
+            var pendingPanApplications = await query.CountAsync(o => o.OrderChild.Any(c => string.IsNullOrEmpty(c.PANNumber)));
+
             // Apply offset-based pagination
             var list = await query
                 .Skip(request.Skip)
@@ -216,7 +216,7 @@ namespace IPOClient.Repositories.Implementations
               );
              pagedResult.Extras = new Dictionary<string, int>
              {
-                 { "totalApplications", totalApplications },
+                 { "totalApplications", totalCount },
                  { "pendingPanApplications", pendingPanApplications }
              };
             return pagedResult;
