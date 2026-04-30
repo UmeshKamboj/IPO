@@ -143,7 +143,7 @@ namespace IPOClient.Services.Implementations
                 }
 
                 // Build rates
-                BuildRates(response, orderSummary, request);
+                BuildRates(response, orderSummary, request, ipoMaster);
 
                 // Calculate Difference Qty
                 var diffQty = CalculateDifferenceQty(response);
@@ -456,17 +456,56 @@ namespace IPOClient.Services.Implementations
             }
         }
 
-        private void BuildRates(IPOAnalysisResponse response, OrderStatusSummaryResponse orderSummary, IPOAnalysisRequest request)
+        private void BuildRates(IPOAnalysisResponse response, OrderStatusSummaryResponse orderSummary, IPOAnalysisRequest request, IPO_IPOMaster ipo)
         {
             var profitMargin = response.ProfitMargin;
+            var profitFactor = 1m - profitMargin / 100m;
+            var spotPremium = response.SpotPremium;
+
+            // Tab 3 (After Listing) — rates are 0
+            if (request.AnalysisType == 3)
+            {
+                foreach (var t in InvestorTypes)
+                {
+                    var key = t.ToString();
+                    response.KostakRates[key] = new RateBlock { WithoutProfitMargin = 0, WithProfitMargin = 0 };
+                    response.SubjectToRates[key] = new RateBlock { WithoutProfitMargin = 0, WithProfitMargin = 0 };
+                }
+                return;
+            }
+
+            // Lot sizes per investor type
+            var lotSizes = new Dictionary<string, decimal>
+            {
+                { IPOInvestorType.Retail.ToString(), ipo.IPO_Retail_Lot_Size },
+                { IPOInvestorType.SHNI.ToString(),   ipo.IPO_SHNI_Lot_Size ?? 0 },
+                { IPOInvestorType.BHNI.ToString(),   ipo.IPO_BHNI_Lot_Size ?? 0 }
+            };
 
             foreach (var t in InvestorTypes)
             {
                 var key = t.ToString();
 
-                // Kostak/Subject rates = 0 for all tabs (matching old app behavior)
-                response.KostakRates[key] = new RateBlock { WithoutProfitMargin = 0, WithProfitMargin = 0 };
-                response.SubjectToRates[key] = new RateBlock { WithoutProfitMargin = 0, WithProfitMargin = 0 };
+                // Kostak Rate Without PM = average net billing per Kostak order for this investor type
+                var kostakWithoutPM = response.KostakCount.ContainsKey(key)
+                    ? Math.Abs(Math.Round(response.KostakCount[key].Net.Avg, 2))
+                    : 0;
+
+                // Subject Rate Without PM = lot size × spot premium
+                var lotSize = lotSizes.GetValueOrDefault(key, 0);
+                var subjectWithoutPM = Math.Round(lotSize * spotPremium, 2);
+
+                response.KostakRates[key] = new RateBlock
+                {
+                    WithoutProfitMargin = kostakWithoutPM,
+                    WithProfitMargin    = Math.Round(kostakWithoutPM * profitFactor, 2)
+                };
+
+                response.SubjectToRates[key] = new RateBlock
+                {
+                    WithoutProfitMargin = subjectWithoutPM,
+                    WithProfitMargin    = Math.Round(subjectWithoutPM * profitFactor, 2)
+                };
             }
         }
 
