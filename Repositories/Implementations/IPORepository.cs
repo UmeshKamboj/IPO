@@ -129,7 +129,7 @@ namespace IPOClient.Repositories.Implementations
             var list = await _dbSet
                 .AsNoTracking()
                 .Where(x => x.IsActive && x.CompanyId == companyId)
-                .OrderBy(x => x.IPOName)
+                .OrderByDescending(x => x.Id)
                 .Select(x => new IPO_IPOMaster
                 {
                     Id = x.Id,
@@ -146,7 +146,7 @@ namespace IPOClient.Repositories.Implementations
             var list = await _dbSet
                 .AsNoTracking()
                 .Where(x => !x.IsActive && x.CompanyId == companyId)
-                .OrderBy(x => x.IPOName)
+                .OrderByDescending(x => x.Id)
                 .Select(x => new IPO_IPOMaster
                 {
                     Id = x.Id,
