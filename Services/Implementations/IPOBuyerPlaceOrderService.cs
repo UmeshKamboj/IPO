@@ -606,8 +606,9 @@ namespace IPOClient.Services.Implementations
             var rate = isPremiumOrOption && order.EffectiveRate.HasValue
                 ? order.EffectiveRate.Value
                 : order.Rate;
-            // Get AllotedQty (aggregated from all children when coming from billing)
-            var allotedQty = child.AllotedQty ?? 0;
+            // Get AllotedQty — keep null separate from 0 for display purposes
+            var rawAllotedQty = child.AllotedQty;          // null = not yet checked, 0 = checked & not allotted
+            var allotedQty = rawAllotedQty ?? 0;           // numeric value used for amount calculations
 
             // Formula depends on OrderCategory:
             // Kostak(1)/SubjectTo(2): Amount = (PreOpenPrice - IPOPrice) × AllotedQty - Rate
@@ -667,7 +668,7 @@ namespace IPOClient.Services.Implementations
                 // SUB-CHILD FIELDS
                 PanNumber = child.PANNumber ?? "",
                 ClientName = child.ClientName ?? "",
-                AllotedQty = allotedQty == 0 ? "-" : allotedQty.ToString(),
+                AllotedQty = rawAllotedQty == null ? "" : rawAllotedQty.Value.ToString(),
                 DematNumber = child.DematNumber ?? "",
                 ApplicationNumber = child.ApplicationNo ?? "",
                 Remark = order.Remarks,

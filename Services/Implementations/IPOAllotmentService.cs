@@ -282,42 +282,39 @@ namespace IPOClient.Services.Implementations
         {
             try
             {
-                var query = _dbContext.ChildPlaceOrder
-                    .Include(c => c.IPOOrder)
-                        .ThenInclude(o => o.BuyerMaster)
-                    .Where(c => c.IPOOrder.BuyerMaster.IPOId == request.IpoId
-                             && c.CompanyId == companyId
-                             && !c.IsDeleted
-                             && !c.IPOOrder.IsDeleted
-                             && !c.IPOOrder.BuyerMaster.IsDeleted);
+                // Step 1: Get matching OrderIds using indexed columns on BuyerMaster + BuyerOrder
+                // This avoids a 3-table JOIN in the UPDATE and lets SQL use existing indexes efficiently
+                var kostakCategories = new[] { (int)IPOOrderCategory.Kostak, (int)IPOOrderCategory.SubjectTo };
 
-                // Firm allotment only applies to Kostak + SubjectTo orders
-                query = query.Where(c =>
-                    c.IPOOrder.OrderCategory == (int)IPOOrderCategory.Kostak ||
-                    c.IPOOrder.OrderCategory == (int)IPOOrderCategory.SubjectTo);
+                var orderQuery = _dbContext.BuyerOrders
+                    .Where(o => o.BuyerMaster.IPOId == request.IpoId
+                             && o.BuyerMaster.CompanyId == companyId
+                             && o.BuyerMaster.IsActive
+                             && !o.BuyerMaster.IsDeleted
+                             && !o.IsDeleted
+                             && kostakCategories.Contains(o.OrderCategory));
 
-                // Filter by GroupId (-1 = All groups)
-                if (request.GroupId > 0)
-                {
-                    query = query.Where(c => c.GroupId == request.GroupId);
-                }
-
-                // Filter by InvestorType (-1 or 0 or null = All)
                 if (request.InvestorType.HasValue && request.InvestorType.Value > 0)
-                {
-                    query = query.Where(c => c.IPOOrder.InvestorType == request.InvestorType.Value);
-                }
+                    orderQuery = orderQuery.Where(o => o.InvestorType == request.InvestorType.Value);
 
-                // Use ExecuteUpdateAsync for bulk update — no need to load entities into memory
-                var updatedCount = await query.ExecuteUpdateAsync(setters => setters
+                var matchingOrderIds = await orderQuery.Select(o => o.OrderId).ToListAsync();
+
+                if (!matchingOrderIds.Any())
+                    return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for the selected filters.");
+
+                // Step 2: Bulk UPDATE children — filter on direct columns using existing index
+                var childQuery = _dbContext.ChildPlaceOrder
+                    .Where(c => matchingOrderIds.Contains(c.OrderId)
+                             && c.CompanyId == companyId
+                             && !c.IsDeleted);
+
+                if (request.GroupId > 0)
+                    childQuery = childQuery.Where(c => c.GroupId == request.GroupId);
+
+                var updatedCount = await childQuery.ExecuteUpdateAsync(setters => setters
                     .SetProperty(c => c.AllotedQty, request.AllotedQty)
                     .SetProperty(c => c.ModifiedDate, DateTime.UtcNow)
                     .SetProperty(c => c.ModifiedBy, "FirmAllotment"));
-
-                if (updatedCount == 0)
-                {
-                    return ReturnData<BulkAllotmentCheckResponse>.ErrorResponse("No order records found for the selected filters.");
-                }
 
                 var response = new BulkAllotmentCheckResponse
                 {
