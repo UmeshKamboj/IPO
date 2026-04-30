@@ -282,7 +282,11 @@ namespace IPOClient.Repositories.Implementations
                 .Select(g => new
                 {
                     InvestorType = g.Key,
-                    TotalAllotted = g.Sum(x => x.AllotedQty ?? 0)
+                    // SELL allotments reduce the net position
+                    TotalAllotted = g.Sum(x =>
+                        x.IPOOrder.OrderType == (int)IPOOrderType.BUY
+                            ? (x.AllotedQty ?? 0)
+                            : -(x.AllotedQty ?? 0))
                 })
                 .ToListAsync();
 
